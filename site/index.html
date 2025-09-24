@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>OVRTK — Track your build. Chat with Scotty.</title>
+  <meta name="description" content="OVRTK keeps your car builds organized and adds Scotty, an AI pit crew for fitment, parts, and wrench-life answers."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      /* brand palette */
+      --bg:#0C0D11;        /* app bg */
+      --panel:#121318;     /* card bg */
+      --line:#1E2127;      /* borders */
+      --text:#E7EAF0;      /* primary text */
+      --muted:#A6ADBB;     /* secondary text */
+      --accent:#E11D48;    /* RWX red */
+      --accent-2:#ff6d99;  /* red border pop */
+      --dim:#0f1218;       /* input/card tint */
+
+      /* spacing scale */
+      --s1: 8px; --s2: 12px; --s3: 16px; --s4: 24px;
+      --s5: 32px; --s6: 48px; --s7: 64px; --s8: 96px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    }
+    a{color:inherit;text-decoration:none}
+
+    /* shell */
+    .wrap{max-width:980px;margin:0 auto;padding:var(--s5) 16px var(--s8)}
+
+    /* top bar */
+    .nav{display:flex;align-items:center;justify-content:space-between;padding:var(--s2) 0}
+    .logo{font-weight:900;letter-spacing:.3px}
+    .nav-links{display:flex;gap:var(--s2)}
+    .link{padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text);font-weight:600}
+    .link:hover{background:#0e1118}
+
+    /* hero */
+    .hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:var(--s7) 0 var(--s5)}
+    .kicker{color:var(--muted);font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+    h1{margin:10px 0 var(--s2);font-size:48px;line-height:1.1;font-weight:900}
+    .lead{max-width:62ch;color:var(--muted);line-height:1.65;font-size:18px}
+
+    /* ctas */
+    .cta{display:flex;gap:var(--s4);flex-wrap:wrap;justify-content:center;margin-top:var(--s4)}
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:8px;
+      padding:14px 18px;border-radius:999px;border:1px solid var(--line);
+      font-weight:900;background:var(--dim);color:var(--text)
+    }
+    .btn.primary{background:var(--accent);color:#111;border-color:var(--accent-2)}
+
+    /* sections */
+    .section{margin-top:var(--s7)}
+    .title{font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);text-align:center;margin-bottom:var(--s3)}
+    .cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s4)}
+    .card{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),#0f1116);border-radius:16px;padding:var(--s5)}
+    .card h3{margin:0 0 var(--s2);font-size:18px}
+    .card p{margin:0;color:var(--muted);line-height:1.6}
+
+    .about{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);margin-top:var(--s4)}
+
+    /* footer */
+    .foot{
+      display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;
+      border-top:1px solid var(--line);padding-top:var(--s4);margin-top:var(--s7);color:var(--muted)
+    }
+    .foot .a{font-weight:800}
+
+    /* responsive */
+    @media (max-width:900px){
+      h1{font-size:40px}
+      .cards{grid-template-columns:1fr}
+      .about{grid-template-columns:1fr}
+      .wrap{padding-bottom:var(--s6)}
+      .hero{padding:var(--s6) 0 var(--s4)}
+      .section{margin-top:var(--s6)}
+      .card{padding:var(--s4)}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- top -->
+    <header class="nav" role="banner">
+      <div class="logo">OVRTK</div>
+      <nav class="nav-links" aria-label="Top">
+        <a class="link" href="/chat.html">Scotty Web</a>
+        <a class="link" href="/support.html">Support</a>
+        <a class="link" href="/privacy.html">Privacy</a>
+        <a class="link" href="/terms.html">Terms</a>
+      </nav>
+    </header>
+
+    <!-- hero -->
+    <section class="hero" id="home">
+      <div class="kicker">Car builds, but clean</div>
+      <h1>Track your build. Chat with Scotty.</h1>
+      <p class="lead">
+        OVRTK keeps parts, photos, and costs organized. Scotty is your pit-crew AI for fitment,
+        tire sizing, torque specs, and upgrade paths. Dark, fast, no nonsense.
+      </p>
+
+      <div class="cta" role="group" aria-label="Primary actions">
+        <a class="btn primary" href="#appstore">Download iOS</a>
+        <a class="btn primary" href="#playstore">Download Android</a>
+        <a class="btn" href="/chat.html">Open Scotty Web</a>
+      </div>
+    </section>
+
+    <!-- features -->
+    <section class="section" id="features" aria-labelledby="features-title">
+      <h2 class="title" id="features-title">Features</h2>
+      <div class="cards">
+        <article class="card">
+          <h3>Garage</h3>
+          <p>Log cars, parts, labor, and photos. Totals stay tidy so your wallet doesn’t get jump-scared.</p>
+        </article>
+        <article class="card">
+          <h3>Scotty AI</h3>
+          <p>Fitment math, tire sizing, torque specs, upgrade paths, and straight-shooting advice.</p>
+        </article>
+        <article class="card">
+          <h3>Build Timeline</h3>
+          <p>Before/after shots and notes, in order. Share the glow-up without camera-roll archaeology.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- about -->
+    <section class="section" id="about" aria-labelledby="about-title">
+      <h2 class="title" id="about-title">About RWX-TEK</h2>
+      <div class="about">
+        <div class="card">
+          <h3>Why we built this</h3>
+          <p>RWX-TEK makes software for people who actually touch cars. OVRTK blends a clean interface with a retro soul. Scotty is the pit crew that never sleeps.</p>
+        </div>
+        <div class="card">
+          <h3>What’s next</h3>
+          <p>More garage smarts, better parts tracking, and deeper Scotty knowledge tuned for real-world wrenching.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- footer -->
+    <footer class="foot" role="contentinfo">
+      <a class="a" href="/privacy.html">Privacy</a>
+      <span>•</span>
+      <a class="a" href="/terms.html">Terms</a>
+      <span>•</span>
+      <span>© <script>document.write(new Date().getFullYear())</script> OVRTK</span>
+    </footer>
+  </div>
+</body>
+</html>

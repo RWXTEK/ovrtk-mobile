@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>OVRTK — Support</title>
+  <meta name="description" content="Support for OVRTK by RWX-TEK INC."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0C0D11; --panel:#121318; --line:#1E2127;
+      --text:#E7EAF0; --muted:#A6ADBB; --accent:#E11D48; --dim:#0f1218;
+      --s1:8px; --s2:12px; --s3:16px; --s4:24px; --s5:32px; --s6:48px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    a{color:var(--text);text-decoration:none}
+    .wrap{max-width:860px;margin:0 auto;padding:var(--s5) 16px}
+    .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--s4)}
+    .navlinks{display:flex;gap:var(--s2);flex-wrap:wrap}
+    .pill{border:1px solid var(--line);background:var(--dim);padding:8px 12px;border-radius:999px;font-weight:600;color:var(--text)}
+    .pill:hover{background:#0e1118}
+    h1{margin:0 0 var(--s2);font-size:32px}
+    .sub{color:var(--muted);margin:0 0 var(--s4)}
+    h2{margin:var(--s5) 0 var(--s2);font-size:20px}
+    p{color:var(--muted);line-height:1.7;margin:0 0 var(--s3)}
+    ul{color:var(--muted);line-height:1.7;padding-left:20px;margin:0 0 var(--s3)}
+    li{margin:6px 0}
+    .card{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),#0f1116);border-radius:16px;padding:var(--s4);margin:var(--s4) 0}
+    .muted{color:var(--muted)}
+    .brand{font-weight:900;letter-spacing:.3px}
+    .accent{color:var(--accent)}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
+    @media (max-width: 760px){ .grid{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">OVRTK</div>
+      <div class="navlinks">
+        <a class="pill" href="/">Home</a>
+        <a class="pill" href="/privacy.html">Privacy</a>
+        <a class="pill" href="/terms.html">Terms</a>
+      </div>
+    </div>
+
+    <h1>Support</h1>
+    <p class="sub">Need help with OVRTK? We’ve got you.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Contact</h2>
+        <p>
+          Email us at
+          <a class="accent" href="mailto:customertek@rwxtek.com">customertek@rwxtek.com</a>.
+        </p>
+        <p>
+          Quick bug report link:
+          <a class="accent" href="mailto:customertek@rwxtek.com?subject=OVRTK%20Support%20%7C%20Bug%20Report&body=Device%3A%20%0AiOS%2FAndroid%20Version%3A%20%0AApp%20Version%3A%20%0ASteps%20to%20reproduce%3A%20%0AScreens%2Ferror%20message%3A%20">pre-filled email</a>.
+        </p>
+        <p class="muted">We usually reply within 1–2 business days.</p>
+      </div>
+
+      <div class="card">
+        <h2>Account & Billing</h2>
+        <ul>
+          <li><strong>Upgrade / OVRTK+</strong>: handled via App Store or Google Play.</li>
+          <li><strong>Restore Purchases</strong>: use the “Restore” option in the app paywall.</li>
+          <li><strong>Delete Account</strong>: in the app, go to Profile → Delete account.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Data & Privacy</h2>
+      <p>
+        We keep your data minimal and encrypted in transit. Read the
+        <a class="accent" href="/privacy.html">Privacy Policy</a> for details,
+        and the <a class="accent" href="/terms.html">Terms of Service</a> for usage rules.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Mailing Address</h2>
+      <p>RWX-TEK INC.<br/>8605 Santa Monica Blvd, Num 664055<br/>West Hollywood, CA 90069</p>
+    </div>
+  </div>
+</body>
+</html>
