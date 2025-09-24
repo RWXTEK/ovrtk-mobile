@@ -1,8 +1,0 @@
-{
-  "android": {
-    "package": "com.anonymous.ovrtk"
-  },
-  "ios": {
-    "bundleIdentifier": "com.anonymous.ovrtk"
-  }
-}
