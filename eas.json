@@ -1,0 +1,46 @@
+{
+  "cli": {
+    "version": ">= 16.19.3",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "workingDirectory": "apps/mobile",
+      "node": "20.18.0",
+      "cache": { "disabled": true },
+      "ios": {
+        "cocoapods": "1.15.2",
+        "autoIncrement": true,
+        "resourceClass": "m-medium"
+      },
+      "android": {},
+      "env": {
+        "NPM_CONFIG_FUND": "false",
+        "NPM_CONFIG_AUDIT": "false",
+        "EXPO_POD_INSTALL_ARGS": "--repo-update",
+        "EXPO_USE_PNPM": "1",
+        "EXPO_USE_NEW_ARCH": "0",
+        "RCT_NEW_ARCH_ENABLED": "0",
+
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyABFOpI8ZC0bgQU46Qm5KowEMtYdnd3SY0",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "ovrtk-117f6.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "ovrtk-117f6",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "ovrtk-117f6.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "38789263703",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:38789263703:web:2eb909070b7bac08a34e12",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-N1MPVYY9VS",
+        "EXPO_PUBLIC_FIREBASE_USE_EMULATORS": "false"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
