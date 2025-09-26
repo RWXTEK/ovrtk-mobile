@@ -16,7 +16,6 @@
     },
     "production": {
       "extends": "base",
-      "workingDirectory": "apps/mobile",
       "ios": {
         "cocoapods": "1.16.2",
         "autoIncrement": true,
