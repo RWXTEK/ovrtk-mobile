@@ -1,48 +1,37 @@
+# Podfile — OVRTK (classic arch, no Fabric)
+
 require File.join(File.dirname(`node --print "require.resolve('expo/package.json')"`), "scripts/autolinking")
 require File.join(File.dirname(`node --print "require.resolve('react-native/package.json')"`), "scripts/react_native_pods")
 
 require 'json'
 podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties.json'))) rescue {}
 
-# 🔒 Force classic arch + no Fabric
+# 🔒 Hard lock classic arch (no Fabric/new-arch)
 ENV['RCT_NEW_ARCH_ENABLED'] = '0'
 ENV['USE_FABRIC'] = '0'
-
-# Keep Expo defaults
-ENV['EX_DEV_CLIENT_NETWORK_INSPECTOR'] ||= podfile_properties['EX_DEV_CLIENT_NETWORK_INSPECTOR']
-ENV['RCT_USE_RN_DEP'] ||= '1' if podfile_properties['ios.buildReactNativeFromSource'] != 'true' && podfile_properties['newArchEnabled'] != 'false'
-ENV['RCT_USE_PREBUILT_RNCORE'] ||= '1' if podfile_properties['ios.buildReactNativeFromSource'] != 'true' && podfile_properties['newArchEnabled'] != 'false'
 
 platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
 target 'OVRTK' do
-  # ✅ Do NOT add `use_frameworks!` anywhere
+  # ⚠️ Do NOT add `use_frameworks!`
   use_expo_modules!
 
-  if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
-    config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
-  else
-    config_command = [
-      'npx',
-      'expo-modules-autolinking',
-      'react-native-config',
-      '--json',
-      '--platform',
-      'ios'
-    ]
-  end
+  config_command =
+    if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
+      ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"]
+    else
+      ['npx', 'expo-modules-autolinking', 'react-native-config', '--json', '--platform', 'ios']
+    end
 
   config = use_native_modules!(config_command)
 
-
-  
   use_react_native!(
     :path => config[:reactNativePath],
     :hermes_enabled => true,
-    :new_arch_enabled => false,
-    :fabric_enabled => false,
+    :new_arch_enabled => false,   # ✅ off
+    :fabric_enabled => false,     # ✅ off
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
@@ -52,5 +41,14 @@ target 'OVRTK' do
       config[:reactNativePath],
       :mac_catalyst_enabled => false
     )
+
+    # 🚫 Some pods keep stale flags — force the macro off everywhere.
+    installer.pods_project.targets.each do |t|
+      t.build_configurations.each do |cfg|
+        defs = Array(cfg.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)'])
+        defs << 'RCT_NEW_ARCH_ENABLED=0' unless defs.any? { |d| d.to_s.include?('RCT_NEW_ARCH_ENABLED=0') }
+        cfg.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = defs
+      end
+    end
   end
 end
