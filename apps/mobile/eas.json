@@ -6,11 +6,11 @@
       "env": {
         "EXPO_NO_DOCTOR": "1",
         "EXPO_USE_PNPM": "1",
+        "EXPO_POD_INSTALL_ARGS": "--clean-install --repo-update",
         "EXPO_USE_NEW_ARCH": "0",
         "RCT_NEW_ARCH_ENABLED": "0",
         "USE_FABRIC": "0",
-        "USE_FRAMEWORKS": "0",
-        "EXPO_POD_INSTALL_ARGS": "--clean-install --repo-update"
+        "USE_FRAMEWORKS": "0"
       },
       "cache": { "disabled": true }
     },
