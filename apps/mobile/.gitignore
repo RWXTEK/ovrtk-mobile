@@ -1,0 +1,52 @@
+# Node
+node_modules/
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native build outputs
+ios/build/
+ios/DerivedData/
+android/.gradle/
+android/app/build/
+
+# Ignore Pods but keep Podfile + lock
+ios/Pods/
+!/ios/Podfile
+!/ios/Podfile.lock
+!/ios/Pods/Manifest.lock
+
+# Android gradle config files should be tracked
+!/android/gradle.properties
+!/android/settings.gradle
+!/android/build.gradle
+!/android/app/build.gradle
+
+# macOS
+.DS_Store
+
+# Env
+.env*
+*.pem
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+app-example
+.metro-health-check*
+# keep iOS pod configs tracked
+!/ios/Podfile
+!/ios/Podfile.lock
+!/ios/Pods/Manifest.lock
