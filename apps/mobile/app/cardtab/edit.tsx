@@ -2,20 +2,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform, ScrollView, Switch
+  KeyboardAvoidingView, Platform, ScrollView, Switch, Image
 } from "react-native";
 import { Stack, useLocalSearchParams, router, useNavigation } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import * as Haptics from "expo-haptics";
 
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { auth, db } from "../../lib/firebase";
+import { auth, db, storage } from "../../lib/firebase";
 import { doc, getDoc, addDoc, updateDoc, collection, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const C = {
   bg: "#0C0D11", panel: "#121318", line: "#1E2127", text: "#E7EAF0",
-  muted: "#A6ADBB", accent: "#E11D48", dim: "#0f1218",
+  muted: "#A6ADBB", accent: "#E11D48", dim: "#0f1218", success: "#10b981"
 };
 
 export default function EditCar() {
@@ -24,11 +27,23 @@ export default function EditCar() {
 
   const navigation = useNavigation();
   const [me, setMe] = useState<User | null>(null);
+  
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [year, setYear] = useState<string>("");
   const [trim, setTrim] = useState("");
+  const [vin, setVin] = useState("");
+  const [engine, setEngine] = useState("");
+  const [transmission, setTransmission] = useState("");
+  const [drivetrain, setDrivetrain] = useState("");
+  const [color, setColor] = useState("");
+  const [mileage, setMileage] = useState("");
+  const [purchasePrice, setPurchasePrice] = useState("");
+  const [currentValue, setCurrentValue] = useState("");
+  const [isModified, setIsModified] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const [photoURL, setPhotoURL] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const headerHeight = useHeaderHeight();
@@ -37,11 +52,17 @@ export default function EditCar() {
   const modelRef = useRef<TextInput>(null);
   const yearRef = useRef<TextInput>(null);
   const trimRef = useRef<TextInput>(null);
+  const vinRef = useRef<TextInput>(null);
+  const engineRef = useRef<TextInput>(null);
+  const transRef = useRef<TextInput>(null);
+  const driveRef = useRef<TextInput>(null);
+  const colorRef = useRef<TextInput>(null);
+  const mileageRef = useRef<TextInput>(null);
+  const purchasePriceRef = useRef<TextInput>(null);
+  const currentValueRef = useRef<TextInput>(null);
 
-  // auth
   useEffect(() => onAuthStateChanged(auth, setMe), []);
 
-  // load when editing
   useEffect(() => {
     (async () => {
       if (!me || !id) return;
@@ -53,7 +74,17 @@ export default function EditCar() {
           setModel(d.model ?? "");
           setYear(d.year != null ? String(d.year) : "");
           setTrim(d.trim ?? "");
+          setVin(d.vin ?? "");
+          setEngine(d.engine ?? "");
+          setTransmission(d.transmission ?? "");
+          setDrivetrain(d.drivetrain ?? "");
+          setColor(d.color ?? "");
+          setMileage(d.mileage != null ? String(d.mileage) : "");
+          setPurchasePrice(d.purchasePrice != null ? String(d.purchasePrice) : "");
+          setCurrentValue(d.currentValue != null ? String(d.currentValue) : "");
+          setIsModified(Boolean(d.isModified));
           setPinned(Boolean(d.pinned));
+          setPhotoURL(d.photoURL ?? null);
         }
       } catch (e) {
         console.warn("load car failed:", e);
@@ -61,8 +92,22 @@ export default function EditCar() {
     })();
   }, [me, id]);
 
+  const pickImage = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setPhotoFile(result.assets[0].uri);
+      setPhotoURL(null);
+    }
+  };
+
   const animatedBack = () => {
-    // prefer a real back animation; fallback to garage tab
     if ((navigation as any)?.canGoBack?.()) {
       (navigation as any).goBack();
     } else {
@@ -71,31 +116,68 @@ export default function EditCar() {
   };
 
   const save = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
     if (!me) return Alert.alert("Sign in required", "Please sign in first.");
     if (!make.trim() || !model.trim()) return Alert.alert("Missing info", "Make and model are required.");
     if (year && isNaN(Number(year))) return Alert.alert("Invalid year", "Use a 4-digit year like 1999.");
+    if (mileage && isNaN(Number(mileage))) return Alert.alert("Invalid mileage", "Use numbers only.");
+    if (purchasePrice && isNaN(Number(purchasePrice))) return Alert.alert("Invalid price", "Use numbers only for purchase price.");
+    if (currentValue && isNaN(Number(currentValue))) return Alert.alert("Invalid value", "Use numbers only for current value.");
 
-    const payload = {
+    const payload: any = {
       make: make.trim(),
       model: model.trim(),
       year: year ? Number(year) : null,
       trim: trim.trim() || null,
+      vin: vin.trim().toUpperCase() || null,
+      engine: engine.trim() || null,
+      transmission: transmission.trim() || null,
+      drivetrain: drivetrain.trim() || null,
+      color: color.trim() || null,
+      mileage: mileage ? Number(mileage) : null,
+      purchasePrice: purchasePrice ? Number(purchasePrice) : null,
+      currentValue: currentValue ? Number(currentValue) : null,
+      isModified,
       pinned,
     };
 
     try {
       setSaving(true);
+      
+      if (photoFile) {
+        const filename = `${me.uid}/${Date.now()}.jpg`;
+        const storageRef = ref(storage, `cars/${filename}`);
+        const response = await fetch(photoFile);
+        const blob = await response.blob();
+        await uploadBytes(storageRef, blob);
+        payload.photoURL = await getDownloadURL(storageRef);
+      } else if (photoURL) {
+        payload.photoURL = photoURL;
+      }
+
       if (isEdit && id) {
-        await updateDoc(doc(db, "garages", me.uid, "cars", id), { ...payload, updatedAt: serverTimestamp() });
-        // pop with animation back to wherever they came from, then show detail
-        router.replace(`/car/${id}`);
+        await updateDoc(doc(db, "garages", me.uid, "cars", id), { 
+          ...payload, 
+          updatedAt: serverTimestamp() 
+        });
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("Success", "Car updated successfully!", [
+          { text: "OK", onPress: () => router.replace(`/car/${id}`) }
+        ]);
       } else {
         const ref = await addDoc(collection(db, "garages", me.uid, "cars"), {
-          ...payload, photoURL: null, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          ...payload, 
+          createdAt: serverTimestamp(), 
+          updatedAt: serverTimestamp(),
         });
-        router.replace(`/car/${ref.id}`);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("Success", "Car added to garage!", [
+          { text: "OK", onPress: () => router.replace(`/car/${ref.id}`) }
+        ]);
       }
     } catch (e: any) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       console.error("save failed:", e);
       Alert.alert("Save failed", String(e?.message ?? e));
     } finally {
@@ -103,11 +185,14 @@ export default function EditCar() {
     }
   };
 
+  const isValidMake = make.trim().length > 0;
+  const isValidModel = model.trim().length > 0;
+  const isValidYear = !year || (year.length === 4 && !isNaN(Number(year)));
+
   return (
     <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* custom back arrow with animated pop */}
       <View style={{ paddingTop: insets.top }}>
         <TouchableOpacity onPress={animatedBack} style={s.backBtn} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
@@ -121,11 +206,10 @@ export default function EditCar() {
         keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
       >
         <ScrollView
-          contentContainerStyle={[s.centerWrap, { paddingBottom: insets.bottom + 32 }]}
+          contentContainerStyle={[s.centerWrap, { paddingBottom: Math.max(insets.bottom + 100, 120) }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          {/* badge */}
           <View style={s.garageHeader}>
             <View style={s.badge}>
               <Ionicons name="car-sport-outline" size={14} color="#111" />
@@ -139,18 +223,39 @@ export default function EditCar() {
             ) : null}
           </View>
 
-          {/* form card */}
           <View style={s.card}>
-            <Text style={s.sectionTitle}>Basics</Text>
+            <Text style={s.sectionTitle}>Photo</Text>
+            <View style={s.divider} />
+            
+            <TouchableOpacity onPress={pickImage} style={s.photoContainer} activeOpacity={0.8}>
+              {photoFile || photoURL ? (
+                <Image 
+                  source={{ uri: photoFile || photoURL || undefined }} 
+                  style={s.photo}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={s.photoPlaceholder}>
+                  <Ionicons name="car-sport" size={48} color={C.muted} style={{ opacity: 0.3 }} />
+                  <Text style={s.photoPlaceholderText}>Tap to add photo</Text>
+                </View>
+              )}
+              <View style={s.photoOverlay}>
+                <Ionicons name="camera" size={20} color="#fff" />
+              </View>
+            </TouchableOpacity>
+
+            <View style={{ height: 18 }} />
+            <Text style={s.sectionTitle}>Identity</Text>
             <View style={s.divider} />
 
             <View style={s.group}>
-              <FieldLabel label="Make" />
+              <FieldLabel label="Make" required valid={isValidMake} />
               <TextInput
                 style={s.input}
                 value={make}
                 onChangeText={setMake}
-                placeholder="Mercedes-Benz"
+                placeholder="Car brand"
                 placeholderTextColor={C.muted}
                 returnKeyType="next"
                 blurOnSubmit={false}
@@ -159,13 +264,13 @@ export default function EditCar() {
             </View>
 
             <View style={s.group}>
-              <FieldLabel label="Model" />
+              <FieldLabel label="Model" required valid={isValidModel} />
               <TextInput
                 ref={modelRef}
                 style={s.input}
                 value={model}
                 onChangeText={setModel}
-                placeholder="E320 / W210"
+                placeholder="Enter model"
                 placeholderTextColor={C.muted}
                 returnKeyType="next"
                 blurOnSubmit={false}
@@ -175,17 +280,18 @@ export default function EditCar() {
 
             <View style={s.row}>
               <View style={[s.group, { flex: 1 }]}>
-                <FieldLabel label="Year" hint="YYYY" />
+                <FieldLabel label="Year" hint="YYYY" valid={isValidYear} />
                 <TextInput
                   ref={yearRef}
                   style={s.input}
                   value={year}
                   onChangeText={setYear}
-                  placeholder="1999"
+                  placeholder="2006"
                   placeholderTextColor={C.muted}
                   keyboardType="number-pad"
                   returnKeyType="next"
                   blurOnSubmit={false}
+                  maxLength={4}
                   onSubmitEditing={() => trimRef.current?.focus()}
                 />
               </View>
@@ -197,44 +303,191 @@ export default function EditCar() {
                   style={s.input}
                   value={trim}
                   onChangeText={setTrim}
-                  placeholder="Sport / Premium…"
+                  placeholder="Sport"
                   placeholderTextColor={C.muted}
-                  returnKeyType="done"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => vinRef.current?.focus()}
                 />
               </View>
             </View>
 
-            {/* options */}
+            <View style={s.group}>
+              <FieldLabel label="VIN" hint="Optional" />
+              <TextInput
+                ref={vinRef}
+                style={[s.input, { textTransform: "uppercase" }]}
+                value={vin}
+                onChangeText={(text) => setVin(text.toUpperCase())}
+                placeholder="WDBFA68E6YA123456"
+                placeholderTextColor={C.muted}
+                autoCapitalize="characters"
+                returnKeyType="next"
+                maxLength={17}
+                blurOnSubmit={false}
+                onSubmitEditing={() => engineRef.current?.focus()}
+              />
+            </View>
+
             <View style={{ height: 18 }} />
-            <Text style={s.sectionTitle}>Garage Options</Text>
+            <Text style={s.sectionTitle}>Specifications</Text>
             <View style={s.divider} />
 
-            <View style={[s.row, { alignItems: "center", justifyContent: "space-between" }]}>
-              <View style={{ gap: 4 }}>
+            <View style={s.group}>
+              <FieldLabel label="Engine" hint="Optional" />
+              <TextInput
+                ref={engineRef}
+                style={s.input}
+                value={engine}
+                onChangeText={setEngine}
+                placeholder="5.0L V8"
+                placeholderTextColor={C.muted}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => transRef.current?.focus()}
+              />
+            </View>
+
+            <View style={s.row}>
+              <View style={[s.group, { flex: 1 }]}>
+                <FieldLabel label="Transmission" hint="Optional" />
+                <TextInput
+                  ref={transRef}
+                  style={s.input}
+                  value={transmission}
+                  onChangeText={setTransmission}
+                  placeholder="5-Speed Auto"
+                  placeholderTextColor={C.muted}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => driveRef.current?.focus()}
+                />
+              </View>
+              <View style={{ width: 10 }} />
+              <View style={[s.group, { flex: 1 }]}>
+                <FieldLabel label="Drivetrain" hint="Optional" />
+                <TextInput
+                  ref={driveRef}
+                  style={s.input}
+                  value={drivetrain}
+                  onChangeText={setDrivetrain}
+                  placeholder="RWD"
+                  placeholderTextColor={C.muted}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => colorRef.current?.focus()}
+                />
+              </View>
+            </View>
+
+            <View style={s.group}>
+              <FieldLabel label="Color" hint="Optional" />
+              <TextInput
+                ref={colorRef}
+                style={s.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="Black"
+                placeholderTextColor={C.muted}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => mileageRef.current?.focus()}
+              />
+            </View>
+
+            <View style={{ height: 18 }} />
+            <Text style={s.sectionTitle}>Value & Investment</Text>
+            <View style={s.divider} />
+
+            <View style={s.group}>
+              <FieldLabel label="Purchase Price" hint="Optional" />
+              <View style={s.currencyInput}>
+                <Text style={s.currencySymbol}>$</Text>
+                <TextInput
+                  ref={purchasePriceRef}
+                  style={[s.input, { flex: 1, borderWidth: 0, paddingLeft: 0, backgroundColor: 'transparent' }]}
+                  value={purchasePrice}
+                  onChangeText={setPurchasePrice}
+                  placeholder="25000"
+                  placeholderTextColor={C.muted}
+                  keyboardType="number-pad"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => currentValueRef.current?.focus()}
+                />
+              </View>
+            </View>
+
+            <View style={s.group}>
+              <FieldLabel label="Current Value" hint="Optional" />
+              <View style={s.currencyInput}>
+                <Text style={s.currencySymbol}>$</Text>
+                <TextInput
+                  ref={currentValueRef}
+                  style={[s.input, { flex: 1, borderWidth: 0, paddingLeft: 0, backgroundColor: 'transparent' }]}
+                  value={currentValue}
+                  onChangeText={setCurrentValue}
+                  placeholder="28000"
+                  placeholderTextColor={C.muted}
+                  keyboardType="number-pad"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => mileageRef.current?.focus()}
+                />
+              </View>
+            </View>
+
+            <View style={{ height: 18 }} />
+            <Text style={s.sectionTitle}>Status</Text>
+            <View style={s.divider} />
+
+            <View style={s.group}>
+              <FieldLabel label="Current Mileage" hint="Optional" />
+              <TextInput
+                ref={mileageRef}
+                style={s.input}
+                value={mileage}
+                onChangeText={setMileage}
+                placeholder="45000"
+                placeholderTextColor={C.muted}
+                keyboardType="number-pad"
+                returnKeyType="done"
+              />
+            </View>
+
+            <View style={[s.row, { alignItems: "center", justifyContent: "space-between", paddingRight: 13 }]}>
+              <View style={{ gap: 4, flex: 1, paddingRight: 16 }}>
+                <Text style={s.switchLabel}>Modified</Text>
+                <Text style={s.switchHint}>This car has aftermarket modifications.</Text>
+              </View>
+              <Switch
+                value={isModified}
+                onValueChange={(val) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setIsModified(val);
+                }}
+                thumbColor={isModified ? "#fff" : "#bbb"}
+                trackColor={{ false: C.line, true: C.accent }}
+              />
+            </View>
+
+            <View style={[s.row, { alignItems: "center", justifyContent: "space-between", marginTop: 16, paddingRight: 13 }]}>
+              <View style={{ gap: 4, flex: 1, paddingRight: 16 }}>
                 <Text style={s.switchLabel}>Pin to Top</Text>
                 <Text style={s.switchHint}>Keep this car at the front of your garage.</Text>
               </View>
               <Switch
                 value={pinned}
-                onValueChange={setPinned}
+                onValueChange={(val) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setPinned(val);
+                }}
                 thumbColor={pinned ? "#fff" : "#bbb"}
                 trackColor={{ false: C.line, true: C.accent }}
               />
             </View>
 
-            {/* preview chips */}
-            <View style={{ height: 18 }} />
-            <Text style={s.sectionTitle}>Preview</Text>
-            <View style={s.divider} />
-            <View style={s.chipsRow}>
-              <Chip icon="pricetag-outline" text={(make || "Make").toUpperCase()} />
-              <Chip icon="cube-outline" text={(model || "Model").toUpperCase()} />
-              <Chip icon="calendar-outline" text={year ? String(year) : "—"} />
-              <Chip icon="ribbon-outline" text={trim || "—"} />
-            </View>
-
-            {/* actions */}
-            <View style={{ height: 12 }} />
+            <View style={{ height: 20 }} />
             <TouchableOpacity
               onPress={save}
               style={[s.primary, saving && { opacity: 0.6 }]}
@@ -258,29 +511,23 @@ export default function EditCar() {
   );
 }
 
-/* helpers */
-function FieldLabel({ label, hint }: { label: string; hint?: string }) {
+function FieldLabel({ label, hint, required, valid }: { 
+  label: string; 
+  hint?: string; 
+  required?: boolean;
+  valid?: boolean;
+}) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-      <Text style={s.label}>{label}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <Text style={s.label}>{label}{required ? " *" : ""}</Text>
       {hint ? <Text style={s.hint}>{hint}</Text> : null}
+      {valid && <Ionicons name="checkmark-circle" size={14} color={C.success} />}
     </View>
   );
 }
 
-function Chip({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
-  return (
-    <View style={s.chip}>
-      <Ionicons name={icon} size={14} color={C.muted} />
-      <Text style={s.chipTxt}>{text}</Text>
-    </View>
-  );
-}
-
-/* styles */
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
-
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -289,9 +536,7 @@ const s = StyleSheet.create({
     paddingVertical: 0,
   },
   backTxt: { color: "#fff", fontWeight: "800" },
-
   centerWrap: { flexGrow: 1, padding: 16 },
-
   garageHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -320,7 +565,6 @@ const s = StyleSheet.create({
     borderRadius: 999,
   },
   badgeGhostTxt: { color: C.muted, fontWeight: "800", fontSize: 12 },
-
   card: {
     width: "100%",
     backgroundColor: C.panel,
@@ -330,16 +574,48 @@ const s = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-
+  photoContainer: {
+    width: "100%",
+    height: 180,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: C.dim,
+    borderWidth: 1,
+    borderColor: C.line,
+    position: "relative",
+  },
+  photo: {
+    width: "100%",
+    height: "100%",
+  },
+  photoPlaceholder: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  photoPlaceholderText: {
+    color: C.muted,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  photoOverlay: {
+    position: "absolute",
+    bottom: 12,
+    right: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   sectionTitle: { color: C.text, fontWeight: "900", fontSize: 14 },
   divider: { height: 1, backgroundColor: C.line, opacity: 0.9, marginVertical: 4 },
-
   group: { gap: 6 },
   row: { flexDirection: "row" },
-
   label: { color: C.muted, fontSize: 12, fontWeight: "700" },
   hint: { color: C.muted, fontSize: 11, opacity: 0.8 },
-
   input: {
     color: C.text,
     backgroundColor: C.dim,
@@ -349,24 +625,24 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-
-  switchLabel: { color: C.text, fontWeight: "800" },
-  switchHint: { color: C.muted, fontSize: 12 },
-
-  chipsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  chip: {
+  currencyInput: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
     backgroundColor: C.dim,
+    borderColor: C.line,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
   },
-  chipTxt: { color: C.text, fontWeight: "800", fontSize: 12 },
-
+  currencySymbol: {
+    color: C.muted,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  switchLabel: { color: C.text, fontWeight: "800" },
+  switchHint: { color: C.muted, fontSize: 12 },
   primary: {
     flexDirection: "row",
     gap: 8,
@@ -378,7 +654,6 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   primaryTxt: { color: "#fff", fontWeight: "900" },
-
   secondary: {
     flexDirection: "row",
     gap: 8,
@@ -391,11 +666,10 @@ const s = StyleSheet.create({
     borderColor: C.line,
   },
   secondaryTxt: { color: C.text, fontWeight: "800" },
-
   footerNote: {
     textAlign: "center",
     color: C.muted,
-    marginTop: 12,
+    marginTop: 20,
     fontSize: 12,
   },
 });

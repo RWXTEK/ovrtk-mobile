@@ -1,7 +1,6 @@
 // app/_layout.tsx
 
-// Reanimated MUST be imported at the very top (no code above this)
-import "react-native-reanimated";
+
 // Ensure gesture-handler is initialized before any navigation code
 import "react-native-gesture-handler";
 

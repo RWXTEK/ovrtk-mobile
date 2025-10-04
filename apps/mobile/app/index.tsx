@@ -20,7 +20,7 @@ import * as Google from "expo-auth-session/providers/google";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 
-import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from "firebase/auth";
+import { GoogleAuthProvider, OAuthProvider, signInWithCredential, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../lib/firebase";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -37,7 +37,6 @@ const C = {
   grey2: "#171A21",
 };
 
-// Expo proxy redirect (only this is needed for dev / Expo Go)
 const REDIRECT_URI = "https://auth.expo.dev/@rwxtek/ovrtk";
 
 export default function Welcome() {
@@ -49,14 +48,13 @@ export default function Welcome() {
     [H, insets.top, insets.bottom]
   );
 
-  // ✅ Only keep the Expo proxy client for now
   const expoClientId = process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID ?? "";
 
+  const [checking, setChecking] = useState(true);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [appleLoading, setAppleLoading] = useState(false);
   const [askLoading, setAskLoading] = useState(false);
 
-  // Google request using Expo proxy (works in Expo Go + dev builds)
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: expoClientId,
     responseType: "id_token",
@@ -65,13 +63,25 @@ export default function Welcome() {
     extraParams: { prompt: "select_account" },
   });
 
+  // Check if user is already logged in
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        router.replace("/garage");
+      } else {
+        setChecking(false);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [router]);
+
   useEffect(() => {
     if (!expoClientId) {
       console.warn("Missing EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID in apps/mobile/.env");
     }
   }, [expoClientId]);
 
-  // Handle the Google -> Firebase sign-in
   useEffect(() => {
     const go = async () => {
       if (response?.type !== "success") return;
@@ -86,7 +96,6 @@ export default function Welcome() {
         setGoogleLoading(true);
         const cred = GoogleAuthProvider.credential(idToken);
         await signInWithCredential(auth, cred);
-        // since tabs were removed, route to a future /garage screen
         router.replace("/garage");
       } finally {
         setGoogleLoading(false);
@@ -99,13 +108,12 @@ export default function Welcome() {
     if (!request) return;
     setGoogleLoading(true);
     try {
-      await promptAsync(); // ✅ works with your REDIRECT_URI
+      await promptAsync();
     } finally {
       setGoogleLoading(false);
     }
   };
   
-  // -------- Apple Sign-In (unchanged) --------
   const randomId = (len = 32) =>
     Array.from({ length: len }, () => Math.floor(Math.random() * 16).toString(16)).join("");
 
@@ -136,7 +144,6 @@ export default function Welcome() {
       });
 
       await signInWithCredential(auth, firebaseCred);
-      // since tabs were removed, route to a future /garage screen
       router.replace("/garage");
     } catch (e) {
       console.warn("Apple sign-in failed", e);
@@ -145,7 +152,6 @@ export default function Welcome() {
     }
   };
 
-  // -------- Ask Scotty -> preview chat (push so Back returns here) --------
   const onAskScotty = async () => {
     if (askLoading) return;
     setAskLoading(true);
@@ -155,7 +161,7 @@ export default function Welcome() {
         pathname: "/chat",
         params: {
           prefill:
-            "Hey Scotty! I’m checking out OVRTK — can you help me plan my first mod?",
+            "Hey Scotty! I'm checking out OVRTK — can you help me plan my first mod?",
         },
       });
     } finally {
@@ -163,12 +169,21 @@ export default function Welcome() {
     }
   };
 
+  if (checking) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color={C.text} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar style="light" />
 
-      {/* full-bleed background */}
       <View
         pointerEvents="none"
         style={[s.blobWrap, { top: -insets.top, bottom: -insets.bottom }]}
@@ -178,7 +193,6 @@ export default function Welcome() {
       </View>
 
       <View style={{ flex: 1 }}>
-        {/* top bar */}
         <View style={[s.topbar, { paddingTop: Math.max(6, insets.top ? 0 : 6) }]}>
           <Text style={s.brand}>OVRTK</Text>
           <View style={s.chip}>
@@ -187,7 +201,6 @@ export default function Welcome() {
           </View>
         </View>
 
-        {/* card */}
         <View style={[s.center, { minHeight: contentMinH }]}>
           <View style={s.card}>
             <View style={s.scottyRow}>
@@ -254,7 +267,6 @@ export default function Welcome() {
           </View>
         </View>
 
-        {/* bottom CTA */}
         <View style={[s.bottom, { paddingBottom: insets.bottom + 10 }]}>
           <TouchableOpacity
             activeOpacity={0.92}
@@ -277,10 +289,8 @@ export default function Welcome() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
-
   blobWrap: { position: "absolute", left: 0, right: 0 },
   blob: { position: "absolute", width: 360, height: 360, borderRadius: 360, opacity: 0.6 },
-
   topbar: {
     paddingHorizontal: 18,
     paddingBottom: 4,
@@ -300,7 +310,6 @@ const s = StyleSheet.create({
   },
   dot: { color: C.accent, fontSize: 16, lineHeight: 14, marginTop: -1 },
   chipText: { color: C.muted, fontSize: 12, letterSpacing: 0.2 },
-
   center: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
   card: {
     width: "100%",
@@ -318,7 +327,6 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 6,
   },
-
   scottyRow: { width: "100%", flexDirection: "row", alignItems: "center", gap: 10 },
   scotty: {
     width: 36, height: 36, borderRadius: 10,
@@ -328,12 +336,9 @@ const s = StyleSheet.create({
   eye: { position: "absolute", top: 12, width: 6, height: 6, borderRadius: 6, backgroundColor: C.text },
   smile: { position: "absolute", bottom: 9, width: 12, height: 3, borderRadius: 3, backgroundColor: C.accent },
   scottyMute: { color: C.muted, fontSize: 12 },
-
   title: { color: C.text, fontSize: 24, fontWeight: "800", textAlign: "center", letterSpacing: 0.2 },
   subtitle: { color: C.muted, textAlign: "center", lineHeight: 20, marginTop: 2 },
-
   divider: { width: "100%", height: 1, backgroundColor: C.line, marginTop: 6 },
-
   actions: { width: "100%", alignItems: "center", gap: 10 },
   oauthBtn: {
     width: "100%",
@@ -349,11 +354,9 @@ const s = StyleSheet.create({
   appleBtn: { backgroundColor: "#000", borderColor: "#000" },
   oauthText: { color: "#fff", fontWeight: "800" },
   oauthTextDark: { color: "#111", fontWeight: "800" },
-
   linkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   linkText: { color: C.text, fontWeight: "700" },
   linkSep: { color: C.muted },
-
   bottom: { paddingHorizontal: 18, gap: 10 },
   scottyBtn: {
     backgroundColor: "rgba(16,17,22,0.95)",

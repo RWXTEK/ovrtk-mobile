@@ -1,5 +1,6 @@
 // mobile/lib/firebase.ts
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import {
   getFirestore,
@@ -13,7 +14,6 @@ import {
   signOut,
   connectAuthEmulator,
   type Auth,
-  type ReactNativeAsyncStorage, // exact type Firebase expects
 } from "firebase/auth";
 import {
   getStorage,
@@ -30,7 +30,7 @@ import type { Analytics } from "firebase/analytics";
 /* ----------------------------- Env helpers ----------------------------- */
 
 function must(key: string): string {
-  const v = process.env[key as keyof NodeJS.ProcessEnv];
+  const v = Constants.expoConfig?.extra?.[key] || process.env[key as keyof NodeJS.ProcessEnv];
   if (!v) throw new Error(`[firebase] Missing environment variable: ${key}`);
   return String(v);
 }
@@ -52,8 +52,7 @@ const firebaseConfig = {
   storageBucket: must("EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET"),
   messagingSenderId: must("EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"),
   appId: must("EXPO_PUBLIC_FIREBASE_APP_ID"),
-  // measurementId is optional (web only)
-  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  measurementId: Constants.expoConfig?.extra?.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 /* ---------------------------- Singletons -------------------------------- */
@@ -68,27 +67,25 @@ let analytics: Analytics | null = null;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
 
-  // Auth: React Native needs explicit persistence
   if (Platform.OS === "web") {
     auth = getAuth(app);
   } else {
-    // require() only on native so web bundle/types aren't pulled in
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const NativeAsyncStorage =
-      require("@react-native-async-storage/async-storage")
-        .default as unknown as ReactNativeAsyncStorage;
+    const NativeAsyncStorage = require("@react-native-async-storage/async-storage").default;
 
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(NativeAsyncStorage),
     });
   }
 
+  // Debug auth state changes
+  auth.onAuthStateChanged((user) => {
+    console.log('[firebase] Auth state changed:', user ? `User: ${user.uid}` : 'logged out');
+  });
+
   db = getFirestore(app);
   storage = getStorage(app);
-  // IMPORTANT: keep region consistent with deployed Cloud Functions
   functions = getFunctions(app, "us-central1");
 
-  // Connect to emulators (optional)
   if (isUsingEmulators) {
     try {
       connectFirestoreEmulator(db, EMU_HOST, 8080);
@@ -97,13 +94,11 @@ if (!getApps().length) {
       });
       connectStorageEmulator(storage, EMU_HOST, 9199);
       connectFunctionsEmulator(functions, EMU_HOST, 5001);
-      // Note: On a physical device, EMU_HOST must be your machine’s LAN IP.
     } catch (e) {
       console.warn("[firebase] Emulator connect failed:", e);
     }
   }
 
-  // Analytics (web only) — dynamic import so native bundles exclude it
   if (Platform.OS === "web") {
     (async () => {
       try {

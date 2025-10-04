@@ -9,10 +9,6 @@
     "ios": "pnpm -C apps/mobile ios",
     "android": "pnpm -C apps/mobile android",
     "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "pnpm": {
-    "overrides": {
-      "react-native-reanimated": "3.10.1"
-    }
+    
   }
 }
