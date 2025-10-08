@@ -5,10 +5,9 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PanResponder } from "react-native";
-
+import { useLocalSearchParams } from "expo-router";
 // haptics (optional)
 let Haptics: any = null;
 try { Haptics = require("expo-haptics"); } catch {}
@@ -16,14 +15,10 @@ try { Haptics = require("expo-haptics"); } catch {}
 // Firebase
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
-import { auth, storage, functions } from "../../../lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, functions } from "../../../lib/firebase";
 
 // RevenueCat
 import Purchases, { CustomerInfo } from "react-native-purchases";
-
-// Upload gate
-import { ensureUploadAllowed, type UploadGateRes } from "../../../lib/uploadGate";
 
 /* ---------- Theme ---------- */
 const C = {
@@ -34,8 +29,12 @@ const C = {
 /* ---------- RC Entitlement ---------- */
 const ENTITLEMENT_ID = (process.env.EXPO_PUBLIC_RC_ENTITLEMENT_ID || "pro_uploads").trim();
 
+/* ---------- Chat Quota ---------- */
+const DAILY_CHAT_LIMIT = 10;
+const STORAGE_CHAT_QUOTA = "@ovrtk/scotty.chat.quota";
+
 /* ---------- Types ---------- */
-type Msg = { id: string; role: "you" | "scotty"; text?: string; imageUrl?: string };
+type Msg = { id: string; role: "you" | "scotty"; text?: string };
 type ChatMsg = { role: "user" | "assistant" | "system"; content: string };
 
 type Tag = "Track" | "OEM+" | "Stance" | "Sleeper";
@@ -60,6 +59,35 @@ async function saveJSON(key: string, val: any) {
   try { await AsyncStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
+/* ---------- Chat Quota Helpers ---------- */
+async function getChatQuota(): Promise<{ count: number; blocked: boolean }> {
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_CHAT_QUOTA);
+    if (!raw) {
+      await AsyncStorage.setItem(STORAGE_CHAT_QUOTA, JSON.stringify({ date: today, count: 0 }));
+      return { count: 0, blocked: false };
+    }
+    const data = JSON.parse(raw) as { date: string; count: number };
+    if (data.date !== today) {
+      await AsyncStorage.setItem(STORAGE_CHAT_QUOTA, JSON.stringify({ date: today, count: 0 }));
+      return { count: 0, blocked: false };
+    }
+    return { count: data.count, blocked: data.count >= DAILY_CHAT_LIMIT };
+  } catch {
+    await AsyncStorage.setItem(STORAGE_CHAT_QUOTA, JSON.stringify({ date: today, count: 0 }));
+    return { count: 0, blocked: false };
+  }
+}
+
+async function incrementChatQuota(): Promise<{ count: number; blocked: boolean }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const quota = await getChatQuota();
+  const next = quota.count + 1;
+  await AsyncStorage.setItem(STORAGE_CHAT_QUOTA, JSON.stringify({ date: today, count: next }));
+  return { count: next, blocked: next >= DAILY_CHAT_LIMIT };
+}
+
 /* ---------- Screen ---------- */
 export default function Scotty() {
   const insets = useSafeAreaInsets();
@@ -69,7 +97,6 @@ export default function Scotty() {
   const [msg, setMsg] = useState("");
   const [items, setItems] = useState<Msg[]>([]);
   const [typing, setTyping] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
   const listRef = useRef<FlatList<Msg>>(null);
 
   // drawer
@@ -85,21 +112,19 @@ export default function Scotty() {
   const [tagFilter, setTagFilter] = useState<Tag | "All">("All");
 
   // layout
-  const INPUT_DOCK_H = 72;
+  const INPUT_DOCK_H = 62;
   const TAB_BAR_H = 76;
 
-  // keyboard → like ChatGPT
+  // keyboard
   const GAP_WHEN_KB = 34;
   const GAP_WHEN_NO_KB = -3;
   const [kbVisible, setKbVisible] = useState(false);
   const [kbHeight, setKbHeight] = useState(0);
 
-  // bottom offset shared by dock + typing pill + list padding
   const bottomOffset = kbVisible
     ? Math.max(0, (kbHeight - (insets.bottom || 0))) + GAP_WHEN_KB
     : TAB_BAR_H + GAP_WHEN_NO_KB;
 
-  // list padding so bubbles never hide under the dock
   const listBottomPad = bottomOffset + INPUT_DOCK_H + 12;
 
   /* ---------- Rename modal state ---------- */
@@ -109,7 +134,8 @@ export default function Scotty() {
 
   /* ---------- Monetization state ---------- */
   const [hasPro, setHasPro] = useState(false);
-  const [remainingToday, setRemainingToday] = useState<number | null>(null); // null = unknown/Unlimited
+  const [chatQuotaCount, setChatQuotaCount] = useState(0);
+  const [chatQuotaBlocked, setChatQuotaBlocked] = useState(false);
 
   /* ---------- Auth ---------- */
   useEffect(() => onAuthStateChanged(auth, setMe), []);
@@ -123,10 +149,53 @@ export default function Scotty() {
         const initial = [...list].sort(sortMeta)[0];
         await selectChat(initial.id, { scroll: false });
       } else {
-        const first = await createChat("New chat");
+        const first = await createChat();
         await selectChat(first.id, { scroll: false });
       }
     })();
+  }, []);
+
+  /* ---------- Load chat quota on mount ---------- */
+  useEffect(() => {
+    (async () => {
+      const quota = await getChatQuota();
+      setChatQuotaCount(quota.count);
+      setChatQuotaBlocked(quota.blocked);
+    })();
+  }, []);
+
+  /* ---------- CHECK FOR NEW CHAT FROM CAR DETAIL ---------- */
+  useEffect(() => {
+    const checkNewChat = async () => {
+      try {
+        const stored = await AsyncStorage.getItem("@ovrtk/scotty.newChat");
+        if (!stored) return;
+        
+        const data = JSON.parse(stored);
+        console.log('[Scotty] Found new chat request:', data);
+        
+        // Clear it immediately so we don't process again
+        await AsyncStorage.removeItem("@ovrtk/scotty.newChat");
+        
+        // Create new chat with car title
+        const newChat = await createChat(data.title);
+        await selectChat(newChat.id);
+        
+        // Send message after a short delay
+        setTimeout(() => {
+          onSend(data.message);
+        }, 500);
+      } catch (error) {
+        console.error('[Scotty] Failed to process new chat:', error);
+      }
+    };
+    
+    // Check immediately on mount
+    checkNewChat();
+    
+    // Also check periodically in case we missed it
+    const interval = setInterval(checkNewChat, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // autoscroll on new messages
@@ -179,7 +248,6 @@ export default function Scotty() {
     const onUpdate = (info: CustomerInfo) => {
       const active = !!info.entitlements.active[ENTITLEMENT_ID];
       setHasPro(active);
-      if (active) setRemainingToday(null); // Unlimited
     };
 
     Purchases.getCustomerInfo()
@@ -205,20 +273,103 @@ export default function Scotty() {
 
   const seedForTitle = (t: string): Msg[] => ([
     { id: "hi", role: "scotty",
-      text: `I’m Scotty.${t ? ` This the ${t}?` : ""} Tell me the vibe (OEM+, track, stance, sleeper) and what you want it to feel like on throttle.` }
+      text: `I'm Scotty.${t ? ` You want to talk about the ${t}?` : ""} Tell me your car + what you're going for (OEM+, track, stance, sleeper, etc).` }
   ]);
 
-  const createChat = async (t: string) => {
+  const createChat = async (t?: string) => {
     const id  = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const now = Date.now();
-    const meta: ChatMeta = { id, title: t || "New chat", updatedAt: now, pinned: false, tags: [], unread: 0 };
+    
+    const title = t || "New chat";
+    
+    const meta: ChatMeta = { id, title, updatedAt: now, pinned: false, tags: [], unread: 0 };
     setChats(prev => {
       const next = [meta, ...prev].sort(sortMeta);
       saveJSON(STORAGE_CHATS, next);
       return next;
     });
-    await saveJSON(STORAGE_CHAT(id), seedForTitle(meta.title));
+    await saveJSON(STORAGE_CHAT(id), seedForTitle(title));
     return meta;
+  };
+
+  // Auto-generate title from first user message
+  const autoTitleChat = async (userMessage: string) => {
+    if (!chatId) return;
+    
+    const currentChat = chats.find(c => c.id === chatId);
+    if (!currentChat || currentChat.title !== "New chat") return; // Only retitle "New chat"
+    
+    const msg = userMessage.toLowerCase();
+    
+    // Car model patterns with improved matching
+    const carPatterns = [
+      // BMW
+      { regex: /\b(e46|e36|e92|e90|e30|e82|e87|f80|f82|f87|g80|g82|m3|m4|m5|m2|335i|340i|m235i|m240i|330i|325i)\b/i, brand: "BMW" },
+      // Mercedes
+      { regex: /\b(w204|w205|w211|w212|c63|e63|e55|e320|c43|c450|amg|cls|sl|slk)\b/i, brand: "Benz" },
+      // Honda
+      { regex: /\b(s2000|civic|type r|type-r|integra|nsx|crx|si|accord|prelude|del sol)\b/i, brand: "Honda" },
+      // Toyota
+      { regex: /\b(supra|mk4|mk5|ae86|gt86|frs|fr-s|brz|celica|mr2|corolla|is300|sc300)\b/i, brand: "Toyota" },
+      // Nissan
+      { regex: /\b(240sx|s13|s14|s15|350z|370z|z33|z34|r32|r33|r34|r35|gtr|gt-r|skyline|silvia)\b/i, brand: "Nissan" },
+      // Mazda
+      { regex: /\b(miata|mx-5|mx5|na|nb|nc|nd|rx-7|rx7|fd|fc|rx-8|mazdaspeed|speed3|speed6)\b/i, brand: "Mazda" },
+      // Subaru
+      { regex: /\b(wrx|sti|brz|impreza|legacy|outback|forester)\b/i, brand: "Subaru" },
+      // Mitsubishi
+      { regex: /\b(evo|evolution|lancer|3000gt|eclipse|galant vr-4)\b/i, brand: "Mitsu" },
+      // Volkswagen
+      { regex: /\b(golf|gti|r32|mk[1-8]|jetta|passat|gli|rabbit|corrado)\b/i, brand: "VW" },
+      // Ford
+      { regex: /\b(mustang|gt350|gt500|focus rs|focus st|fiesta st|cobra|terminator)\b/i, brand: "Ford" },
+      // Porsche
+      { regex: /\b(911|cayman|boxster|gt3|gt2|turbo s|carrera|996|997|991|992)\b/i, brand: "Porsche" },
+      // Audi
+      { regex: /\b(s4|s5|s3|rs6|rs3|rs4|rs5|r8|quattro|a4|a3|tt)\b/i, brand: "Audi" },
+      // Lexus
+      { regex: /\b(is300|is350|gs300|gs350|rc350|rcf|rc-f|lfa)\b/i, brand: "Lexus" },
+      // Dodge/Chrysler
+      { regex: /\b(challenger|charger|hellcat|demon|viper|srt|srt-4|neon)\b/i, brand: "Mopar" },
+      // Chevy/Corvette
+      { regex: /\b(corvette|c5|c6|c7|c8|camaro|ss|z28|1le)\b/i, brand: "Chevy" },
+    ];
+    
+    // Find matching car
+    for (const pattern of carPatterns) {
+      const match = msg.match(pattern.regex);
+      if (match) {
+        const model = match[1].toUpperCase();
+        const newTitle = `${pattern.brand} ${model}`;
+        await renameChat(chatId, newTitle);
+        return;
+      }
+    }
+    
+    // Topic-based fallback with better detection
+    if (msg.includes("turbo") || msg.includes("boost") || msg.includes("forced induction")) {
+      await renameChat(chatId, "Turbo Build");
+    } else if (msg.includes("exhaust") || msg.includes("catback") || msg.includes("downpipe")) {
+      await renameChat(chatId, "Exhaust Setup");
+    } else if (msg.includes("suspension") || msg.includes("coilover") || msg.includes("spring")) {
+      await renameChat(chatId, "Suspension");
+    } else if (msg.includes("track") || msg.includes("race") || msg.includes("autocross")) {
+      await renameChat(chatId, "Track Build");
+    } else if (msg.includes("stance") || msg.includes("wheel") || msg.includes("fitment")) {
+      await renameChat(chatId, "Stance Setup");
+    } else if (msg.includes("daily") || msg.includes("oem+") || msg.includes("reliable")) {
+      await renameChat(chatId, "Daily Driver");
+    } else if (msg.includes("drift") || msg.includes("angle") || msg.includes("slide")) {
+      await renameChat(chatId, "Drift Build");
+    } else if (msg.includes("drag") || msg.includes("quarter mile") || msg.includes("strip")) {
+      await renameChat(chatId, "Drag Build");
+    } else if (msg.includes("engine swap") || msg.includes("swap")) {
+      await renameChat(chatId, "Engine Swap");
+    } else if (msg.includes("wide") || msg.includes("widebody") || msg.includes("fender")) {
+      await renameChat(chatId, "Widebody");
+    } else if (msg.includes("budget") || msg.includes("cheap") || msg.includes("affordable")) {
+      await renameChat(chatId, "Budget Build");
+    }
   };
 
   const renameChat = async (id: string, newTitle: string) => {
@@ -240,7 +391,7 @@ export default function Scotty() {
       const list = await loadJSON<ChatMeta[]>(STORAGE_CHATS, []);
       if (list[0]) await selectChat(list[0].id);
       else {
-        const fresh = await createChat("New chat");
+        const fresh = await createChat();
         await selectChat(fresh.id);
       }
     }
@@ -293,10 +444,24 @@ export default function Scotty() {
     setDrawerOpen(false);
   };
 
-  /* ---------- Send ---------- */
+  /* ---------- Send (WITH QUOTA CHECK) ---------- */
   async function onSend(textIn?: string) {
     const text = (textIn ?? msg).trim();
     if (!text || !chatId) return;
+
+    // Check quota for free users
+    if (!hasPro && chatQuotaBlocked) {
+      Haptics?.notificationAsync?.(Haptics.NotificationFeedbackType.Warning);
+      setItems(prev => ([
+        ...prev,
+        {
+          id: String(Math.random()),
+          role: "scotty",
+          text: "You've reached your 10 free questions today. Upgrade to OVRTK Plus for unlimited chat in Profile → Upgrade.",
+        },
+      ]));
+      return;
+    }
 
     Haptics?.impactAsync?.(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -306,6 +471,19 @@ export default function Scotty() {
     await saveJSON(STORAGE_CHAT(chatId), nextMsgs);
     await bumpPreview(text);
 
+    // Auto-title chat based on first USER message (not counting seed message)
+    const userMessages = items.filter(m => m.role === "you");
+    if (userMessages.length === 0) { // This is the first user message
+      await autoTitleChat(text);
+    }
+
+    // Increment quota for free users
+    if (!hasPro) {
+      const newQuota = await incrementChatQuota();
+      setChatQuotaCount(newQuota.count);
+      setChatQuotaBlocked(newQuota.blocked);
+    }
+
     try {
       const history: ChatMsg[] =
         nextMsgs.filter(m => !!m.text).slice(-24).map<ChatMsg>(m => ({
@@ -314,7 +492,7 @@ export default function Scotty() {
         }));
 
       const res = await callScottyFn({ messages: history });
-      const reply = (res.data?.reply || "").trim() || "I’m blanking. Rephrase that for me?";
+      const reply = (res.data?.reply || "").trim() || "I'm blanking. Rephrase that for me?";
       const after = [...nextMsgs, { id: id + "_r", role: "scotty", text: reply } as Msg];
       setItems(after); await saveJSON(STORAGE_CHAT(chatId), after); await bumpPreview(reply);
     } catch {
@@ -325,86 +503,6 @@ export default function Scotty() {
     }
   }
 
-  /* ---------- Images (gated) ---------- */
-const pickImage = async () => {
-  try {
-    // Gate free users before opening picker
-    if (!hasPro) {
-      const res: UploadGateRes | boolean = await ensureUploadAllowed();
-      const allowed = typeof res === "object" ? res.allowed : !!res;
-      const remaining = typeof res === "object" ? res.remaining : null;
-
-      if (remaining !== null) setRemainingToday(remaining);
-
-      // If NOT allowed, warn and bail out
-      if (!allowed) {
-        Haptics?.notificationAsync?.(Haptics.NotificationFeedbackType.Warning);
-        setItems(prev => ([
-          ...prev,
-          {
-            id: String(Math.random()),
-            role: "scotty",
-            text: "You’ve hit the free limit (10 uploads/day). Unlock unlimited uploads with OVRTK Plus in Profile → Upgrade.",
-          },
-        ]));
-        return;
-      }
-    }
-
-    // Permissions + choose image
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (perm.status !== "granted" || !chatId) return;
-
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-    });
-    if (res.canceled || !res.assets?.length) return;
-
-    const localUri = res.assets[0].uri;
-    const tempId   = String(Math.random());
-    const nextMsgs = [...items, { id: tempId, role: "you", imageUrl: localUri } as Msg];
-    setItems(nextMsgs);
-    await saveJSON(STORAGE_CHAT(chatId), nextMsgs);
-
-    if (me) {
-      try {
-        const uploaded = await uploadImage(localUri, me.uid);
-        if (uploaded) {
-          const replaced = nextMsgs.map(m => m.id === tempId ? { ...m, imageUrl: uploaded } : m);
-          setItems(replaced);
-          await saveJSON(STORAGE_CHAT(chatId), replaced);
-        }
-      } catch {}
-    }
-
-    setTyping(true);
-    setTimeout(async () => {
-      const bot = {
-        id: tempId + "_r",
-        role: "scotty",
-        text: "Got it. If you want stance tighter, I can calc offsets. Drop wheel size/width/ET and your goal (flush, mild, tucked).",
-      } as Msg;
-      const after = [...nextMsgs, bot];
-      setItems(after);
-      await saveJSON(STORAGE_CHAT(chatId), after);
-      await bumpPreview("Got your photo.");
-      setTyping(false);
-    }, 400);
-  } catch {}
-};
-
-
-  const uploadImage = async (uri: string, uid: string) => {
-    try {
-      const res = await fetch(uri); const buf = await res.blob();
-      const fileName = `users/${uid}/scotty/${Date.now()}.jpg`;
-      const storageRef = ref(storage, fileName);
-      await uploadBytes(storageRef, buf);
-      return await getDownloadURL(storageRef);
-    } catch { return null; }
-  };
-
   /* ---------- Export ---------- */
   const exportChat = async (format: "text" | "md") => {
     if (!chatId) return;
@@ -412,8 +510,8 @@ const pickImage = async () => {
     const body = items.map(m => {
       const who = m.role === "you" ? "You" : "Scotty";
       return format === "md"
-        ? `**${who}:** ${m.text || (m.imageUrl ? `![image](${m.imageUrl})` : "")}`
-        : `${who}: ${m.text || (m.imageUrl ? `[image] ${m.imageUrl}` : "")}`;
+        ? `**${who}:** ${m.text || ""}`
+        : `${who}: ${m.text || ""}`;
     }).join(format === "md" ? "\n\n" : "\n");
     await Share.share({ title: meta?.title || "Scotty chat", message: body });
   };
@@ -440,36 +538,42 @@ const pickImage = async () => {
 
   const drawerWidth = Math.min(320, Math.round(Dimensions.get("window").width * 0.92));
 
+  const remaining = hasPro ? null : Math.max(0, DAILY_CHAT_LIMIT - chatQuotaCount);
+
   /* ---------- UI ---------- */
   return (
     <SafeAreaView style={s.safe} edges={['bottom','left','right']}>
       {/* Top bar */}
       <View style={s.topbar}>
         <View style={s.titleRow}>
-          <View style={s.face}><View style={[s.eye,{left:10}]}/><View style={[s.eye,{right:10}]}/><View style={s.smile}/></View>
+          <View style={s.face}>
+            <View style={[s.eye,{left:10}]}/>
+            <View style={[s.eye,{right:10}]}/>
+            <View style={s.smile}/>
+          </View>
           <Text style={s.brand}>Ask Scotty</Text>
         </View>
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           {/* quota pill */}
           <View style={s.quotaPill}>
-            <Ionicons name={hasPro ? "flash" : "cloud-upload-outline"} size={12} color={hasPro ? "#111" : C.muted} />
+            <Ionicons name={hasPro ? "flash" : "chatbubble-ellipses-outline"} size={11} color={hasPro ? "#111" : C.text} />
             <Text style={s.quotaTxt}>
-              {hasPro ? "Plus — Unlimited" : (remainingToday === null ? "10/day" : `${remainingToday}/10 left today`)}
+              {hasPro ? "Plus" : (remaining === null ? "10/day" : `${remaining}/10`)}
             </Text>
           </View>
 
           <TouchableOpacity onPress={openDrawer} style={s.iconGhost}>
-            <Ionicons name="time-outline" size={18} color={C.text} />
+            <Ionicons name="time-outline" size={17} color={C.text} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={async () => {
-              const created = await createChat("New chat");
+              const created = await createChat();
               await selectChat(created.id);
             }}
             style={s.newBtn}
           >
-            <Ionicons name="add" size={16} color="#111" />
+            <Ionicons name="add" size={15} color="#111" />
             <Text style={s.newTxt}>New</Text>
           </TouchableOpacity>
         </View>
@@ -531,7 +635,7 @@ const pickImage = async () => {
           contentContainerStyle={{ padding: 14, paddingBottom: listBottomPad }}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
-            <Bubble role={item.role} text={item.text} imageUrl={item.imageUrl} onPreview={setPreview} />
+            <Bubble role={item.role} text={item.text} />
           )}
         />
       </View>
@@ -546,29 +650,25 @@ const pickImage = async () => {
 
       {/* Input dock */}
       <View style={[s.inputDock, { bottom: bottomOffset }]}>
-        <TouchableOpacity onPress={pickImage} style={s.iconBtn}>
-          <Ionicons name="image-outline" size={20} color={C.text} />
-        </TouchableOpacity>
         <TextInput
           style={s.input}
           value={msg}
           onChangeText={setMsg}
-          placeholder="Tell me your car + goals…"
+          placeholder={chatQuotaBlocked && !hasPro ? "Daily limit reached — upgrade for unlimited" : "Tell me your car + goals…"}
           placeholderTextColor={C.muted}
           returnKeyType="send"
           onSubmitEditing={() => onSend()}
+          editable={hasPro || !chatQuotaBlocked}
+          multiline
         />
-        <TouchableOpacity style={[s.sendBtn, !msg.trim() && { opacity: 0.5 }]} onPress={() => onSend()} disabled={!msg.trim()}>
-          <Ionicons name="send" size={18} color="#111" />
+        <TouchableOpacity 
+          style={[s.sendBtn, (!msg.trim() || (chatQuotaBlocked && !hasPro)) && { opacity: 0.5 }]} 
+          onPress={() => onSend()} 
+          disabled={!msg.trim() || (chatQuotaBlocked && !hasPro)}
+        >
+          <Ionicons name="send" size={17} color="#111" />
         </TouchableOpacity>
       </View>
-
-      {/* Image preview */}
-      <Modal visible={!!preview} transparent onRequestClose={() => setPreview(null)}>
-        <Pressable style={s.previewBackdrop} onPress={() => setPreview(null)}>
-          {!!preview && <Image source={{ uri: preview }} style={s.previewImg} resizeMode="contain" />}
-        </Pressable>
-      </Modal>
 
       {/* Rename chat modal */}
       <Modal visible={renameVisible} transparent animationType="fade" onRequestClose={() => setRenameVisible(false)}>
@@ -631,7 +731,7 @@ const pickImage = async () => {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={async () => {
-                const created = await createChat("New chat");
+                const created = await createChat();
                 setQ(""); setTagFilter("All");
                 await selectChat(created.id);
               }}
@@ -710,7 +810,7 @@ const pickImage = async () => {
 }
 
 /* ---------- Bubble ---------- */
-function Bubble({ role, text, imageUrl, onPreview }: { role: "you" | "scotty"; text?: string; imageUrl?: string; onPreview: (uri: string | null) => void; }) {
+function Bubble({ role, text }: { role: "you" | "scotty"; text?: string }) {
   const isYou = role === "you";
   return (
     <View style={[s.bubble, isYou ? s.bubbleYou : s.bubbleScotty]}>
@@ -720,11 +820,6 @@ function Bubble({ role, text, imageUrl, onPreview }: { role: "you" | "scotty"; t
           <Text style={s.badgeTxt}>scotty</Text>
         </View>
       )}
-      {imageUrl ? (
-        <TouchableOpacity onPress={() => onPreview(imageUrl)} activeOpacity={0.9}>
-          <Image source={{ uri: imageUrl }} style={s.bubbleImg} />
-        </TouchableOpacity>
-      ) : null}
       {text ? <Text style={s.msgTxt}>{text}</Text> : null}
     </View>
   );
@@ -736,144 +831,294 @@ const s = StyleSheet.create({
 
   topbar: {
     paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1, borderColor: C.line,
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1, 
+    borderColor: C.line,
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between",
   },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   brand: { color: C.text, fontSize: 18, fontWeight: "900", letterSpacing: 0.2 },
 
-  face: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#0D0E12", borderWidth: 1, borderColor: C.line, justifyContent: "center", alignItems: "center" },
+  face: { 
+    width: 34, 
+    height: 34, 
+    borderRadius: 10, 
+    backgroundColor: "#0D0E12", 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
   eye: { position: "absolute", top: 11, width: 6, height: 6, borderRadius: 6, backgroundColor: C.text },
   smile: { position: "absolute", bottom: 8, width: 12, height: 3, borderRadius: 3, backgroundColor: C.accent },
 
   iconGhost: {
-    width: 34, height: 34, borderRadius: 10,
-    alignItems: "center", justifyContent: "center",
-    backgroundColor: "#12141b", borderWidth: 1, borderColor: C.line,
+    width: 32, 
+    height: 32, 
+    borderRadius: 10,
+    alignItems: "center", 
+    justifyContent: "center",
+    backgroundColor: "#12141b", 
+    borderWidth: 1, 
+    borderColor: C.line,
   },
   newBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: C.accent, paddingHorizontal: 12, paddingVertical: 8,
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 5,
+    backgroundColor: C.accent, 
+    paddingHorizontal: 11, 
+    paddingVertical: 7,
     borderRadius: 999,
   },
-  newTxt: { color: "#111", fontWeight: "900" },
+  newTxt: { color: "#111", fontWeight: "900", fontSize: 13 },
 
   quotaPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
     borderRadius: 999,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 6,
     backgroundColor: "#12141b",
     borderWidth: 1,
     borderColor: C.line,
-    marginRight: 6,
   },
-  quotaTxt: { color: C.muted, fontSize: 11, fontWeight: "800" },
+  quotaTxt: { color: C.text, fontSize: 11, fontWeight: "800" },
 
   /* Recents */
   recentsWrap: { paddingVertical: 8, gap: 6 },
-  recentsTitle: { color: C.muted, fontSize: 12, paddingHorizontal: 14, textTransform: "uppercase", letterSpacing: 0.6 },
-  recentCard: {
-    width: 220, marginRight: 8,
-    backgroundColor: "#12141b", borderWidth: 1, borderColor: C.line, borderRadius: 12,
-    paddingHorizontal: 12, paddingVertical: 10,
+  recentsTitle: { 
+    color: C.muted, 
+    fontSize: 11, 
+    paddingHorizontal: 14, 
+    textTransform: "uppercase", 
+    letterSpacing: 0.6,
+    fontWeight: "700"
   },
-  recentTitle: { color: C.text, fontWeight: "800", flexShrink: 1 },
+  recentCard: {
+    width: 200, 
+    marginRight: 8,
+    backgroundColor: "#12141b", 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    borderRadius: 12,
+    paddingHorizontal: 12, 
+    paddingVertical: 10,
+  },
+  recentTitle: { color: C.text, fontWeight: "800", flexShrink: 1, fontSize: 13 },
   recentLast: { color: C.muted, fontSize: 12, marginTop: 2 },
 
-  quickRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 6, flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  quickChip: { backgroundColor: "#0f1218", borderWidth: 1, borderColor: C.line, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  quickRow: { 
+    paddingHorizontal: 12, 
+    paddingTop: 6, 
+    paddingBottom: 6, 
+    flexDirection: "row", 
+    flexWrap: "wrap", 
+    gap: 8 
+  },
+  quickChip: { 
+    backgroundColor: "#0f1218", 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    paddingHorizontal: 10, 
+    paddingVertical: 6, 
+    borderRadius: 999 
+  },
   quickTxt: { color: C.text, fontSize: 12, fontWeight: "700" },
 
   chatWrap: { flex: 1 },
 
-  bubble: { maxWidth: "88%", padding: 12, borderRadius: 14, borderWidth: 1, marginBottom: 10 },
+  bubble: { 
+    maxWidth: "85%", 
+    padding: 12, 
+    borderRadius: 14, 
+    borderWidth: 1, 
+    marginBottom: 10 
+  },
   bubbleYou: { alignSelf: "flex-end", backgroundColor: "#191c23", borderColor: C.line },
   bubbleScotty: { alignSelf: "flex-start", backgroundColor: C.panel, borderColor: C.line },
 
   badgeRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
   badgeDot: { color: C.accent, fontSize: 14, lineHeight: 14 },
-  badgeTxt: { color: C.muted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6 },
+  badgeTxt: { 
+    color: C.muted, 
+    fontSize: 11, 
+    textTransform: "uppercase", 
+    letterSpacing: 0.6,
+    fontWeight: "700"
+  },
 
-  msgTxt: { color: C.text },
-  bubbleImg: { width: 220, height: 220, borderRadius: 12, borderWidth: 1, borderColor: C.line, backgroundColor: "#0b0d12" },
+  msgTxt: { color: C.text, lineHeight: 20 },
 
   // Typing pill
   typingPill: {
     position: "absolute",
-    left: 14, right: 14,
+    left: 14, 
+    right: 14,
     height: 30,
     borderRadius: 999,
     backgroundColor: "#12141b",
-    borderWidth: 1, borderColor: C.line,
+    borderWidth: 1, 
+    borderColor: C.line,
     paddingHorizontal: 12,
-    flexDirection: "row", alignItems: "center", gap: 8,
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8,
   },
   dot: { width: 6, height: 6, borderRadius: 6, backgroundColor: C.muted, opacity: 0.6 },
   typingTxt: { color: C.muted, fontSize: 12 },
 
-  // ABSOLUTE dock that follows keyboard
+  // Input dock
   inputDock: {
-    position: "absolute", left: 0, right: 0,
-    borderTopWidth: 1, borderColor: C.line, backgroundColor: C.glass,
-    paddingHorizontal: 8, paddingTop: 8, paddingBottom: 8,
-    flexDirection: "row", gap: 10, alignItems: "center",
-    height: 72,
+    position: "absolute", 
+    left: 0, 
+    right: 0,
+    borderTopWidth: 1, 
+    borderColor: C.line, 
+    backgroundColor: C.glass,
+    paddingHorizontal: 10, 
+    paddingTop: 8, 
+    paddingBottom: 8,
+    flexDirection: "row", 
+    gap: 8, 
+    alignItems: "flex-end",
+    height: 62,
   },
-  iconBtn: { width: 44, height: 44, borderRadius: 999, alignItems: "center", justifyContent: "center", backgroundColor: "#12141b", borderWidth: 1, borderColor: C.line },
-  input: { flex: 1, height: 44, borderRadius: 999, paddingHorizontal: 14, color: C.text, backgroundColor: "#12141b", borderWidth: 1, borderColor: C.line },
-  sendBtn: { height: 44, paddingHorizontal: 14, borderRadius: 999, alignItems: "center", justifyContent: "center", backgroundColor: C.accent },
-
-  previewBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.9)", alignItems: "center", justifyContent: "center" },
-  previewImg: { width: "94%", height: "86%" },
+  input: { 
+    flex: 1, 
+    minHeight: 44,
+    maxHeight: 100,
+    borderRadius: 999, 
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: C.text, 
+    backgroundColor: "#12141b", 
+    borderWidth: 1, 
+    borderColor: C.line 
+  },
+  sendBtn: { 
+    width: 44,
+    height: 44, 
+    borderRadius: 999, 
+    alignItems: "center", 
+    justifyContent: "center", 
+    backgroundColor: C.accent 
+  },
 
   // Rename modal styles
   modalScrim: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.5)",
-    alignItems: "center", justifyContent: "center"
+    flex: 1, 
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center", 
+    justifyContent: "center"
   },
   modalCard: {
-    width: "82%", backgroundColor: C.panel,
-    borderRadius: 12, padding: 16,
-    borderWidth: 1, borderColor: C.line
+    width: "82%", 
+    backgroundColor: C.panel,
+    borderRadius: 12, 
+    padding: 16,
+    borderWidth: 1, 
+    borderColor: C.line
   },
   modalTitle: { color: C.text, fontWeight: "800", marginBottom: 10, fontSize: 16 },
   modalInput: {
-    borderWidth: 1, borderColor: C.line, borderRadius: 8,
-    color: C.text, paddingHorizontal: 10, paddingVertical: 8,
+    borderWidth: 1, 
+    borderColor: C.line, 
+    borderRadius: 8,
+    color: C.text, 
+    paddingHorizontal: 10, 
+    paddingVertical: 8,
     backgroundColor: "#12141b"
   },
   modalRow: { flexDirection: "row", justifyContent: "flex-end", gap: 16, marginTop: 14 },
 
   // Drawer
   drawer: {
-    position: "absolute", right: 0, top: 0,
-    backgroundColor: C.panel, borderLeftWidth: 1, borderColor: C.line, padding: 12,
+    position: "absolute", 
+    right: 0, 
+    top: 0,
+    backgroundColor: C.panel, 
+    borderLeftWidth: 1, 
+    borderColor: C.line, 
+    padding: 12,
     zIndex: 40,
-    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 18, shadowOffset: { width: -6, height: 0 },
+    shadowColor: "#000", 
+    shadowOpacity: 0.3, 
+    shadowRadius: 18, 
+    shadowOffset: { width: -6, height: 0 },
     elevation: 12,
     borderTopLeftRadius: 16,
   },
-  drawerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  drawerHeader: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between", 
+    marginBottom: 8 
+  },
   drawerTitle: { color: C.text, fontWeight: "900", fontSize: 16 },
-  addMini: { backgroundColor: C.accent, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
-  miniGhost: { backgroundColor: "#12141b", borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 8, justifyContent: "center" },
+  addMini: { 
+    backgroundColor: C.accent, 
+    borderRadius: 10, 
+    paddingHorizontal: 10, 
+    paddingVertical: 6 
+  },
+  miniGhost: { 
+    backgroundColor: "#12141b", 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    borderRadius: 10, 
+    paddingHorizontal: 8, 
+    justifyContent: "center" 
+  },
 
-  searchRow: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#12141b", borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8 },
+  searchRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8, 
+    backgroundColor: "#12141b", 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    borderRadius: 10, 
+    paddingHorizontal: 10, 
+    paddingVertical: 8, 
+    marginBottom: 8 
+  },
   searchInput: { color: C.text, flex: 1 },
 
-  chatRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, backgroundColor: "#12141b", borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 10, marginBottom: 8 },
+  chatRow: { 
+    flexDirection: "row", 
+    alignItems: "flex-start", 
+    gap: 6, 
+    backgroundColor: "#12141b", 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    borderRadius: 12, 
+    padding: 10, 
+    marginBottom: 8 
+  },
   chatRowActive: { borderColor: C.accent },
-  chatTitle: { color: C.text, fontWeight: "800" },
+  chatTitle: { color: C.text, fontWeight: "800", fontSize: 14 },
   chatLast: { color: C.muted, fontSize: 12, marginTop: 2 },
 
-  tagSmall: { borderWidth: 1, borderColor: C.line, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  tagSmall: { 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    borderRadius: 999, 
+    paddingHorizontal: 8, 
+    paddingVertical: 4 
+  },
   tagSmallTxt: { color: C.muted, fontSize: 11, fontWeight: "700" },
 
-  unreadDot: { backgroundColor: C.accent, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 4 },
+  unreadDot: { 
+    backgroundColor: C.accent, 
+    borderRadius: 10, 
+    paddingHorizontal: 6, 
+    paddingVertical: 2, 
+    marginLeft: 4 
+  },
   unreadTxt: { color: "#111", fontSize: 10, fontWeight: "900" },
 });

@@ -1,6 +1,5 @@
 // app/_layout.tsx
 
-
 // Ensure gesture-handler is initialized before any navigation code
 import "react-native-gesture-handler";
 
@@ -9,6 +8,7 @@ import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import Constants from 'expo-constants';
 
 import Purchases, { LOG_LEVEL, type CustomerInfo } from "react-native-purchases";
 import { onAuthStateChanged } from "firebase/auth";
@@ -16,13 +16,12 @@ import { auth } from "../lib/firebase";
 
 const C = { bg: "#0C0D11", text: "#E7EAF0" };
 
-// Env (public) – set in eas.json or .env
-const RC_IOS_KEY = process.env.EXPO_PUBLIC_RC_IOS_KEY ?? "";
-const RC_ANDROID_KEY = process.env.EXPO_PUBLIC_RC_ANDROID_KEY ?? "";
-const ENTITLEMENT_ID = process.env.EXPO_PUBLIC_RC_ENTITLEMENT_ID ?? "pro";
+// Use environment variables from eas.json via Constants (fallback to hardcoded for Expo Go)
+const RC_IOS_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_RC_IOS_KEY ?? "appl_kbIDSqefYIxgekZLUxtdjMMJiEx";
+const RC_ANDROID_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_RC_ANDROID_KEY ?? "";
+const ENTITLEMENT_ID = Constants.expoConfig?.extra?.EXPO_PUBLIC_RC_ENTITLEMENT_ID ?? "pro_uploads";
 
 export default function RootLayout() {
-  // guard to avoid configuring Purchases more than once (fast refresh, etc.)
   const purchasesConfiguredRef = useRef(false);
 
   useEffect(() => {
@@ -30,10 +29,8 @@ export default function RootLayout() {
     if (Platform.OS === "ios" || Platform.OS === "android") {
       Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
 
-      // Pick the right key for the current platform
       const apiKey = Platform.OS === "ios" ? RC_IOS_KEY : (RC_ANDROID_KEY || RC_IOS_KEY);
 
-      // Skip configuration if key is missing or placeholder
       const looksPlaceholder =
         !apiKey || apiKey.startsWith("appl_xxx") || apiKey.startsWith("goog_xxx");
 
@@ -41,6 +38,7 @@ export default function RootLayout() {
         try {
           Purchases.configure({ apiKey });
           purchasesConfiguredRef.current = true;
+          console.log("✅ RevenueCat configured successfully");
         } catch (e) {
           console.warn("RevenueCat configure error:", e);
         }
@@ -54,6 +52,8 @@ export default function RootLayout() {
     // Link RC <-> Firebase Auth
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       if (Platform.OS !== "ios" && Platform.OS !== "android") return;
+      if (!purchasesConfiguredRef.current) return;
+      
       try {
         if (user) {
           await Purchases.logIn(user.uid);
@@ -72,25 +72,33 @@ export default function RootLayout() {
     };
 
     if (Platform.OS === "ios" || Platform.OS === "android") {
-      Purchases.addCustomerInfoUpdateListener(listener);
-      // Optionally prefetch offerings (non-blocking)
-      (async () => {
+      if (purchasesConfiguredRef.current) {
+        Purchases.addCustomerInfoUpdateListener(listener);
+      }
+      
+      // Prefetch offerings (non-blocking) - WITH DELAY
+      setTimeout(async () => {
+        if (!purchasesConfiguredRef.current) return;
         try {
           const offerings = await Purchases.getOfferings();
           if (!offerings.current) {
             console.warn(
               "RC: No current offerings. Check products/offerings in RevenueCat and your sandbox user."
             );
+          } else {
+            console.log("✅ RevenueCat offerings loaded successfully");
           }
         } catch (e) {
           console.warn("RC: fetch offerings error:", e);
         }
-      })();
+      }, 500); // 500ms delay to ensure Purchases is fully ready
     }
 
     return () => {
       if (Platform.OS === "ios" || Platform.OS === "android") {
-        Purchases.removeCustomerInfoUpdateListener(listener);
+        if (purchasesConfiguredRef.current) {
+          Purchases.removeCustomerInfoUpdateListener(listener);
+        }
       }
       unsubAuth();
     };

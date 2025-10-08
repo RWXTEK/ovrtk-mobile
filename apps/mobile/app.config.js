@@ -4,6 +4,7 @@ export default {
     slug: "ovrtk",
     scheme: "ovrtk",
     version: "1.0.0",
+    orientation: "portrait",
     icon: "./assets/images/OVRTKICONIC.png",
     jsEngine: "hermes",
     newArchEnabled: false,
@@ -11,6 +12,7 @@ export default {
       supportsTablet: true,
       bundleIdentifier: "com.rwxtek.ovrtk",
       usesAppleSignIn: true,
+      associatedDomains: ["applinks:ovrtk.com"],
       infoPlist: {
         NSPhotoLibraryUsageDescription: "OVRTK needs access to your photos so you can upload images to Scotty.",
         NSPhotoLibraryAddUsageDescription: "OVRTK saves generated or edited images to your library when you choose to.",
@@ -21,6 +23,7 @@ export default {
     android: {
       package: "com.rwxtek.ovrtk",
       versionCode: 2,
+      screenOrientation: "portrait",
       adaptiveIcon: {
         foregroundImage: "./assets/images/OVRTKICONIC.png",
         backgroundColor: "#0C0D11"
@@ -31,9 +34,24 @@ export default {
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VISUAL_USER_SELECTED",
         "CAMERA"
+      ],
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "ovrtk.com",
+              pathPrefix: "/u"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     web: {
+      bundler: "metro",
       output: "static",
       favicon: "./assets/images/OVRTKICONIC.png"
     },
@@ -63,6 +81,9 @@ export default {
       EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
       EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
       EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+      EXPO_PUBLIC_RC_IOS_KEY: process.env.EXPO_PUBLIC_RC_IOS_KEY || "appl_kbIDSqefYIxgekZLUxtdjMMJiEx",
+      EXPO_PUBLIC_RC_ANDROID_KEY: process.env.EXPO_PUBLIC_RC_ANDROID_KEY || "",
+      EXPO_PUBLIC_RC_ENTITLEMENT_ID: process.env.EXPO_PUBLIC_RC_ENTITLEMENT_ID || "pro_uploads",
     },
     owner: "rwxtek"
   }

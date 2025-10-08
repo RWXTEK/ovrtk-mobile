@@ -2,19 +2,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform, ScrollView, Switch, Image
+  KeyboardAvoidingView, Platform, ScrollView, Switch
 } from "react-native";
 import { Stack, useLocalSearchParams, router, useNavigation } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { auth, db, storage } from "../../lib/firebase";
+import { auth, db } from "../../lib/firebase";
 import { doc, getDoc, addDoc, updateDoc, collection, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const C = {
   bg: "#0C0D11", panel: "#121318", line: "#1E2127", text: "#E7EAF0",
@@ -42,8 +40,6 @@ export default function EditCar() {
   const [currentValue, setCurrentValue] = useState("");
   const [isModified, setIsModified] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const [photoURL, setPhotoURL] = useState<string | null>(null);
-  const [photoFile, setPhotoFile] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const headerHeight = useHeaderHeight();
@@ -84,28 +80,12 @@ export default function EditCar() {
           setCurrentValue(d.currentValue != null ? String(d.currentValue) : "");
           setIsModified(Boolean(d.isModified));
           setPinned(Boolean(d.pinned));
-          setPhotoURL(d.photoURL ?? null);
         }
       } catch (e) {
         console.warn("load car failed:", e);
       }
     })();
   }, [me, id]);
-
-  const pickImage = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [16, 9],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setPhotoFile(result.assets[0].uri);
-      setPhotoURL(null);
-    }
-  };
 
   const animatedBack = () => {
     if ((navigation as any)?.canGoBack?.()) {
@@ -116,7 +96,10 @@ export default function EditCar() {
   };
 
   const save = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Safe haptic feedback
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
     
     if (!me) return Alert.alert("Sign in required", "Please sign in first.");
     if (!make.trim() || !model.trim()) return Alert.alert("Missing info", "Make and model are required.");
@@ -124,6 +107,8 @@ export default function EditCar() {
     if (mileage && isNaN(Number(mileage))) return Alert.alert("Invalid mileage", "Use numbers only.");
     if (purchasePrice && isNaN(Number(purchasePrice))) return Alert.alert("Invalid price", "Use numbers only for purchase price.");
     if (currentValue && isNaN(Number(currentValue))) return Alert.alert("Invalid value", "Use numbers only for current value.");
+
+    const userId = me.uid;
 
     const payload: any = {
       make: make.trim(),
@@ -144,40 +129,40 @@ export default function EditCar() {
 
     try {
       setSaving(true);
-      
-      if (photoFile) {
-        const filename = `${me.uid}/${Date.now()}.jpg`;
-        const storageRef = ref(storage, `cars/${filename}`);
-        const response = await fetch(photoFile);
-        const blob = await response.blob();
-        await uploadBytes(storageRef, blob);
-        payload.photoURL = await getDownloadURL(storageRef);
-      } else if (photoURL) {
-        payload.photoURL = photoURL;
-      }
 
       if (isEdit && id) {
-        await updateDoc(doc(db, "garages", me.uid, "cars", id), { 
+        await updateDoc(doc(db, "garages", userId, "cars", id), { 
           ...payload, 
           updatedAt: serverTimestamp() 
         });
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        try {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+        
         Alert.alert("Success", "Car updated successfully!", [
           { text: "OK", onPress: () => router.replace(`/car/${id}`) }
         ]);
       } else {
-        const ref = await addDoc(collection(db, "garages", me.uid, "cars"), {
+        const refDoc = await addDoc(collection(db, "garages", userId, "cars"), {
           ...payload, 
           createdAt: serverTimestamp(), 
           updatedAt: serverTimestamp(),
         });
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        try {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+        
         Alert.alert("Success", "Car added to garage!", [
-          { text: "OK", onPress: () => router.replace(`/car/${ref.id}`) }
+          { text: "OK", onPress: () => router.replace(`/car/${refDoc.id}`) }
         ]);
       }
     } catch (e: any) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
+      
       console.error("save failed:", e);
       Alert.alert("Save failed", String(e?.message ?? e));
     } finally {
@@ -224,28 +209,6 @@ export default function EditCar() {
           </View>
 
           <View style={s.card}>
-            <Text style={s.sectionTitle}>Photo</Text>
-            <View style={s.divider} />
-            
-            <TouchableOpacity onPress={pickImage} style={s.photoContainer} activeOpacity={0.8}>
-              {photoFile || photoURL ? (
-                <Image 
-                  source={{ uri: photoFile || photoURL || undefined }} 
-                  style={s.photo}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={s.photoPlaceholder}>
-                  <Ionicons name="car-sport" size={48} color={C.muted} style={{ opacity: 0.3 }} />
-                  <Text style={s.photoPlaceholderText}>Tap to add photo</Text>
-                </View>
-              )}
-              <View style={s.photoOverlay}>
-                <Ionicons name="camera" size={20} color="#fff" />
-              </View>
-            </TouchableOpacity>
-
-            <View style={{ height: 18 }} />
             <Text style={s.sectionTitle}>Identity</Text>
             <View style={s.divider} />
 
@@ -455,37 +418,21 @@ export default function EditCar() {
               />
             </View>
 
-            <View style={[s.row, { alignItems: "center", justifyContent: "space-between", paddingRight: 13 }]}>
-              <View style={{ gap: 4, flex: 1, paddingRight: 16 }}>
-                <Text style={s.switchLabel}>Modified</Text>
-                <Text style={s.switchHint}>This car has aftermarket modifications.</Text>
-              </View>
-              <Switch
-                value={isModified}
-                onValueChange={(val) => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setIsModified(val);
-                }}
-                thumbColor={isModified ? "#fff" : "#bbb"}
-                trackColor={{ false: C.line, true: C.accent }}
-              />
-            </View>
+            <ToggleRow 
+              label="Modified"
+              hint="This car has aftermarket modifications."
+              value={isModified}
+              onValueChange={setIsModified}
+              icon="build-outline"
+            />
 
-            <View style={[s.row, { alignItems: "center", justifyContent: "space-between", marginTop: 16, paddingRight: 13 }]}>
-              <View style={{ gap: 4, flex: 1, paddingRight: 16 }}>
-                <Text style={s.switchLabel}>Pin to Top</Text>
-                <Text style={s.switchHint}>Keep this car at the front of your garage.</Text>
-              </View>
-              <Switch
-                value={pinned}
-                onValueChange={(val) => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setPinned(val);
-                }}
-                thumbColor={pinned ? "#fff" : "#bbb"}
-                trackColor={{ false: C.line, true: C.accent }}
-              />
-            </View>
+            <ToggleRow 
+              label="Pin to Top"
+              hint="Keep this car at the front of your garage."
+              value={pinned}
+              onValueChange={setPinned}
+              icon="pin-outline"
+            />
 
             <View style={{ height: 20 }} />
             <TouchableOpacity
@@ -523,6 +470,53 @@ function FieldLabel({ label, hint, required, valid }: {
       {hint ? <Text style={s.hint}>{hint}</Text> : null}
       {valid && <Ionicons name="checkmark-circle" size={14} color={C.success} />}
     </View>
+  );
+}
+
+function ToggleRow({
+  label, hint, value, onValueChange, icon,
+}: {
+  label: string;
+  hint: string;
+  value: boolean;
+  onValueChange: (v: boolean) => void;
+  icon: keyof typeof Ionicons.glyphMap;
+}) {
+  return (
+    <TouchableOpacity 
+      activeOpacity={0.7}
+      onPress={() => {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch {}
+        onValueChange(!value);
+      }}
+      style={s.toggleRow}
+    >
+      <View style={s.toggleLeft}>
+        <View style={[s.iconCircle, value && s.iconCircleActive]}>
+          <Ionicons name={icon} size={20} color={value ? "#111" : C.text} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.switchLabel}>{label}</Text>
+          <Text style={s.switchHint}>{hint}</Text>
+        </View>
+      </View>
+      <View style={s.switchLane}>
+        <Switch
+          value={value}
+          onValueChange={(val) => {
+            try {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            } catch {}
+            onValueChange(val);
+          }}
+          thumbColor="#fff"
+          trackColor={{ false: C.line, true: C.accent }}
+          ios_backgroundColor={C.line}
+        />
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -574,42 +568,6 @@ const s = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-  photoContainer: {
-    width: "100%",
-    height: 180,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: C.dim,
-    borderWidth: 1,
-    borderColor: C.line,
-    position: "relative",
-  },
-  photo: {
-    width: "100%",
-    height: "100%",
-  },
-  photoPlaceholder: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  photoPlaceholderText: {
-    color: C.muted,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  photoOverlay: {
-    position: "absolute",
-    bottom: 12,
-    right: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: C.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   sectionTitle: { color: C.text, fontWeight: "900", fontSize: 14 },
   divider: { height: 1, backgroundColor: C.line, opacity: 0.9, marginVertical: 4 },
   group: { gap: 6 },
@@ -641,8 +599,54 @@ const s = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
-  switchLabel: { color: C.text, fontWeight: "800" },
-  switchHint: { color: C.muted, fontSize: 12 },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    minHeight: 68,
+    borderRadius: 12,
+    backgroundColor: "transparent",
+  },
+  toggleLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingRight: 16,
+    flex: 1,
+  },
+  iconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: C.dim,
+    borderWidth: 1,
+    borderColor: C.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconCircleActive: {
+    backgroundColor: C.accent,
+    borderColor: C.accent,
+  },
+  switchLabel: { 
+    color: C.text, 
+    fontWeight: "800",
+    fontSize: 15,
+    letterSpacing: 0.2,
+  },
+  switchHint: { 
+    color: C.muted, 
+    fontSize: 12,
+    flexShrink: 1,
+    marginTop: 2,
+  },
+  switchLane: {
+    width: 51,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
   primary: {
     flexDirection: "row",
     gap: 8,

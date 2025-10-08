@@ -19,6 +19,9 @@ import { auth, functions } from "../lib/firebase";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
+// RevenueCat
+import Purchases, { CustomerInfo } from "react-native-purchases";
+
 import "react-native-get-random-values";
 import { v4 as uuidv4 } from "uuid";
 
@@ -34,9 +37,10 @@ const C = {
 
 const DAILY_QUOTA = 10;
 const STORAGE_KEY = "ovrtk.chat.guest.quota";
+const STORAGE_KEY_LOGGED_IN = "ovrtk.chat.loggedin.quota";
+const ENTITLEMENT_ID = (process.env.EXPO_PUBLIC_RC_ENTITLEMENT_ID || "pro_uploads").trim();
 
 type Msg = { id: string; role: "user" | "scotty"; text: string };
-// what we send to the callable:
 type ChatMsg = { role: "user" | "assistant" | "system"; content: string };
 
 export default function Chat() {
@@ -47,6 +51,7 @@ export default function Chat() {
   const [me, setMe] = useState<User | null>(null);
   const [count, setCount] = useState(0);
   const [blocked, setBlocked] = useState(false);
+  const [hasPro, setHasPro] = useState(false);
 
   const [msg, setMsg] = useState("");
 
@@ -61,21 +66,42 @@ export default function Chat() {
 
   useEffect(() => onAuthStateChanged(auth, setMe), []);
 
+  /* ---------- RevenueCat: watch entitlement ---------- */
+  useEffect(() => {
+    const onUpdate = (info: CustomerInfo) => {
+      const active = !!info.entitlements.active[ENTITLEMENT_ID];
+      setHasPro(active);
+    };
+
+    Purchases.getCustomerInfo()
+      .then(onUpdate)
+      .catch(() => setHasPro(false));
+
+    Purchases.addCustomerInfoUpdateListener(onUpdate);
+
+    return () => {
+      try { /* @ts-ignore */ Purchases.removeCustomerInfoUpdateListener?.(onUpdate); } catch {}
+    };
+  }, []);
+
   // quota setup (once)
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   useEffect(() => {
     (async () => {
+      // Use different storage key for logged-in vs guest
+      const storageKey = me ? STORAGE_KEY_LOGGED_IN : STORAGE_KEY;
+      
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const raw = await AsyncStorage.getItem(storageKey);
         if (!raw) {
-          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ date: today, count: 0 }));
+          await AsyncStorage.setItem(storageKey, JSON.stringify({ date: today, count: 0 }));
           setCount(0);
           setBlocked(false);
           return;
         }
         const data = JSON.parse(raw) as { date: string; count: number };
         if (data.date !== today) {
-          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ date: today, count: 0 }));
+          await AsyncStorage.setItem(storageKey, JSON.stringify({ date: today, count: 0 }));
           setCount(0);
           setBlocked(false);
         } else {
@@ -83,28 +109,44 @@ export default function Chat() {
           setBlocked(data.count >= DAILY_QUOTA);
         }
       } catch {
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ date: today, count: 0 }));
+        await AsyncStorage.setItem(storageKey, JSON.stringify({ date: today, count: 0 }));
         setCount(0);
         setBlocked(false);
       }
     })();
-  }, [today]);
+  }, [today, me]);
 
   async function bumpQuota() {
+    const storageKey = me ? STORAGE_KEY_LOGGED_IN : STORAGE_KEY;
     const next = count + 1;
     setCount(next);
     setBlocked(next >= DAILY_QUOTA);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ date: today, count: next }));
+    await AsyncStorage.setItem(storageKey, JSON.stringify({ date: today, count: next }));
   }
 
-  const canSend = !!me || !blocked;
+  // Can send if: Pro user OR not blocked
+  const canSend = hasPro || !blocked;
 
   // callable to backend
   const callScotty = httpsCallable<{ messages: ChatMsg[] }, { reply?: string }>(functions, "scottyChat");
 
   const onSend = async () => {
     const text = msg.trim();
-    if (!text || (!me && blocked)) return;
+    if (!text) return;
+
+    // Check quota for non-Pro users
+    if (!hasPro && blocked) {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const upgradeMsg: Msg = {
+        id: uuidv4(),
+        role: "scotty",
+        text: me 
+          ? "You've used your 10 free questions today. Upgrade to OVRTK Plus for unlimited chat - check Profile → Upgrade."
+          : "You've used your 10 free questions today. Sign up and upgrade to OVRTK Plus for unlimited chat.",
+      };
+      setItems((prev) => [...prev, upgradeMsg]);
+      return;
+    }
 
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -112,8 +154,8 @@ export default function Chat() {
     setItems((prev) => [...prev, userMsg]);
     setMsg("");
 
-    // bump local quota for guests
-    if (!me) await bumpQuota();
+    // bump quota for non-Pro users
+    if (!hasPro) await bumpQuota();
 
     // build lightweight chat history for the model (clip to last 24 turns)
     const history: ChatMsg[] = [
@@ -126,7 +168,7 @@ export default function Chat() {
 
     try {
       const res = await callScotty({ messages: history });
-      const replyText = (res.data?.reply || "").trim() || "I couldn’t parse that—try again?";
+      const replyText = (res.data?.reply || "").trim() || "I couldn't parse that—try again?";
       const reply: Msg = { id: uuidv4(), role: "scotty", text: replyText };
       setItems((prev) => [...prev, reply]);
     } catch {
@@ -134,8 +176,7 @@ export default function Chat() {
       const reply: Msg = {
         id: uuidv4(),
         role: "scotty",
-        text:
-          "Server hiccup. I’ll be back in a sec—try that message one more time.",
+        text: "Server hiccup. I'll be back in a sec—try that message one more time.",
       };
       setItems((prev) => [...prev, reply]);
     } finally {
@@ -146,6 +187,8 @@ export default function Chat() {
       );
     }
   };
+
+  const remaining = hasPro ? null : Math.max(0, DAILY_QUOTA - count);
 
   return (
     <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
@@ -166,9 +209,13 @@ export default function Chat() {
           <Text style={s.brand}>Scotty</Text>
         </View>
 
-        {me ? (
+        {hasPro ? (
           <View style={s.badge}>
-            <Text style={s.badgeTxt}>Member</Text>
+            <Text style={s.badgeTxt}>Plus — Unlimited</Text>
+          </View>
+        ) : me ? (
+          <View style={s.badge}>
+            <Text style={s.badgeTxt}>{remaining}/10 left today</Text>
           </View>
         ) : (
           <View style={s.badge}>
@@ -242,10 +289,8 @@ export default function Chat() {
               <TextInput
                 style={s.input}
                 placeholder={
-                  me
-                    ? "Ask Scotty anything…"
-                    : blocked
-                    ? "Daily limit reached — sign in to keep going"
+                  !canSend
+                    ? "Daily limit reached — upgrade for unlimited"
                     : "Ask Scotty anything…"
                 }
                 placeholderTextColor={C.muted}
@@ -264,9 +309,10 @@ export default function Chat() {
               </TouchableOpacity>
             </View>
 
-            {!me && blocked && (
+            {!hasPro && blocked && (
               <Text style={s.blockTxt}>
-                You’ve used {DAILY_QUOTA}/{DAILY_QUOTA} free messages today. Sign up for unlimited chats.
+                You've used {DAILY_QUOTA}/{DAILY_QUOTA} free messages today. 
+                {me ? " Upgrade to Plus for unlimited chat." : " Sign up for unlimited chats."}
               </Text>
             )}
           </View>

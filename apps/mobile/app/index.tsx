@@ -7,23 +7,14 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Platform,
   ActivityIndicator,
   Dimensions,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
-import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
-import * as AppleAuthentication from "expo-apple-authentication";
-import * as Crypto from "expo-crypto";
-
-import { GoogleAuthProvider, OAuthProvider, signInWithCredential, onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../lib/firebase";
-
-WebBrowser.maybeCompleteAuthSession();
 
 const C = {
   bg: "#0C0D11",
@@ -33,11 +24,10 @@ const C = {
   text: "#E7EAF0",
   muted: "#A6ADBB",
   accent: "#E11D48",
+  accentHover: "#BE123A",
   grey1: "#23262E",
   grey2: "#171A21",
 };
-
-const REDIRECT_URI = "https://auth.expo.dev/@rwxtek/ovrtk";
 
 export default function Welcome() {
   const router = useRouter();
@@ -48,20 +38,8 @@ export default function Welcome() {
     [H, insets.top, insets.bottom]
   );
 
-  const expoClientId = process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID ?? "";
-
   const [checking, setChecking] = useState(true);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [appleLoading, setAppleLoading] = useState(false);
   const [askLoading, setAskLoading] = useState(false);
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: expoClientId,
-    responseType: "id_token",
-    scopes: ["openid", "profile", "email"],
-    redirectUri: REDIRECT_URI,
-    extraParams: { prompt: "select_account" },
-  });
 
   // Check if user is already logged in
   useEffect(() => {
@@ -75,82 +53,6 @@ export default function Welcome() {
     
     return () => unsubscribe();
   }, [router]);
-
-  useEffect(() => {
-    if (!expoClientId) {
-      console.warn("Missing EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID in apps/mobile/.env");
-    }
-  }, [expoClientId]);
-
-  useEffect(() => {
-    const go = async () => {
-      if (response?.type !== "success") return;
-      const idToken =
-        (response as any)?.params?.id_token ??
-        (response as any)?.authentication?.idToken;
-      if (!idToken) {
-        setGoogleLoading(false);
-        return;
-      }
-      try {
-        setGoogleLoading(true);
-        const cred = GoogleAuthProvider.credential(idToken);
-        await signInWithCredential(auth, cred);
-        router.replace("/garage");
-      } finally {
-        setGoogleLoading(false);
-      }
-    };
-    go();
-  }, [response, router]);
-  
-  const signInWithGoogle = async () => {
-    if (!request) return;
-    setGoogleLoading(true);
-    try {
-      await promptAsync();
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-  
-  const randomId = (len = 32) =>
-    Array.from({ length: len }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-
-  const signInWithApple = async () => {
-    if (Platform.OS !== "ios") return;
-    try {
-      setAppleLoading(true);
-      const rawNonce = randomId(32);
-      const hashedNonce = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        rawNonce
-      );
-
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-        nonce: hashedNonce,
-      });
-
-      if (!credential.identityToken) throw new Error("No identity token from Apple");
-
-      const provider = new OAuthProvider("apple.com");
-      const firebaseCred = provider.credential({
-        idToken: credential.identityToken,
-        rawNonce,
-      });
-
-      await signInWithCredential(auth, firebaseCred);
-      router.replace("/garage");
-    } catch (e) {
-      console.warn("Apple sign-in failed", e);
-    } finally {
-      setAppleLoading(false);
-    }
-  };
 
   const onAskScotty = async () => {
     if (askLoading) return;
@@ -212,64 +114,36 @@ export default function Welcome() {
               <Text style={s.scottyMute}>Scotty is standing by</Text>
             </View>
 
-            <Text style={s.title}>Best buds. Better builds.</Text>
+            <Text style={s.title}>Built by hustle.    Tuned by Scotty.</Text>
             <Text style={s.subtitle}>
-              Keep it simple—plan mods, track parts, and visualize fitment together.
+            Your digital garage — powered by Scotty. Plan it, track it, flex it.
             </Text>
 
             <View style={s.divider} />
 
             <View style={s.actions}>
               <TouchableOpacity
-                activeOpacity={0.92}
-                onPress={signInWithGoogle}
-                disabled={googleLoading || !request}
-                style={[s.oauthBtn, s.googleBtn, (googleLoading || !request) && { opacity: 0.7 }]}
+                activeOpacity={0.85}
+                onPress={() => router.push("/auth/signup")}
+                style={s.primaryBtn}
               >
-                {googleLoading ? (
-                  <ActivityIndicator />
-                ) : (
-                  <>
-                    <Ionicons name="logo-google" size={18} color="#111" />
-                    <Text style={s.oauthTextDark}>Continue with Google</Text>
-                  </>
-                )}
+                <Text style={s.primaryBtnText}>Create Account</Text>
               </TouchableOpacity>
 
-              {Platform.OS === "ios" ? (
-                <TouchableOpacity
-                  activeOpacity={0.92}
-                  onPress={signInWithApple}
-                  disabled={appleLoading}
-                  style={[s.oauthBtn, s.appleBtn, appleLoading && { opacity: 0.7 }]}
-                >
-                  {appleLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="logo-apple" size={20} color="#fff" />
-                      <Text style={s.oauthText}>Continue with Apple</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              ) : null}
-
-              <View style={s.linkRow}>
-                <TouchableOpacity hitSlop={8} onPress={() => router.push("/auth/signup")}>
-                  <Text style={s.linkText}>Create account</Text>
-                </TouchableOpacity>
-                <Text style={s.linkSep}>·</Text>
-                <TouchableOpacity hitSlop={8} onPress={() => router.push("/auth/login")}>
-                  <Text style={s.linkText}>Log in with email</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => router.push("/auth/login")}
+                style={s.secondaryBtn}
+              >
+                <Text style={s.secondaryBtnText}>Log In</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
 
-        <View style={[s.bottom, { paddingBottom: insets.bottom + 10 }]}>
+        <View style={[s.bottom, { paddingBottom: insets.bottom + 15 }]}>
           <TouchableOpacity
-            activeOpacity={0.92}
+            activeOpacity={0.85}
             onPress={onAskScotty}
             style={[s.scottyBtn, askLoading && { opacity: 0.7 }]}
             disabled={askLoading}
@@ -277,7 +151,14 @@ export default function Welcome() {
             {askLoading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={s.scottyBtnText}>Ask Scotty</Text>
+              <>
+                <View style={s.scottyIcon}>
+                  <View style={[s.eyeSmall, { left: 6 }]} />
+                  <View style={[s.eyeSmall, { right: 6 }]} />
+                  <View style={s.smileSmall} />
+                </View>
+                <Text style={s.scottyBtnText}>Ask Scotty</Text>
+              </>
             )}
           </TouchableOpacity>
           <Text style={s.footer}>Powered by RWX-TEK INC.</Text>
@@ -303,10 +184,10 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 1,
     borderRadius: 999,
     backgroundColor: "rgba(15,16,19,0.9)",
-    gap: 6,
+    gap: 5,
   },
   dot: { color: C.accent, fontSize: 16, lineHeight: 14, marginTop: -1 },
   chipText: { color: C.muted, fontSize: 12, letterSpacing: 0.2 },
@@ -318,57 +199,155 @@ const s = StyleSheet.create({
     borderColor: C.line,
     borderWidth: 1,
     borderRadius: 18,
-    padding: 18,
-    gap: 14,
+    padding: 24,
+    gap: 16,
     alignItems: "center",
-    shadowColor: Platform.OS === "ios" ? "#000" : "rgba(0,0,0,0.7)",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
+  },
+  scottyRow: { width: "100%", flexDirection: "row", alignItems: "center", gap: 10 },
+  scotty: {
+    width: 36, 
+    height: 36, 
+    borderRadius: 10,
+    backgroundColor: "#0D0E12", 
+    borderWidth: 1, 
+    borderColor: C.line,
+    justifyContent: "center", 
+    alignItems: "center",
+  },
+  eye: { 
+    position: "absolute", 
+    top: 12, 
+    width: 6, 
+    height: 6, 
+    borderRadius: 6, 
+    backgroundColor: C.text 
+  },
+  smile: { 
+    position: "absolute", 
+    bottom: 9, 
+    width: 12, 
+    height: 3, 
+    borderRadius: 3, 
+    backgroundColor: C.accent 
+  },
+  scottyMute: { color: C.muted, fontSize: 12, letterSpacing: 0.2 },
+  title: { 
+    color: C.text, 
+    fontSize: 28, 
+    fontWeight: "800", 
+    textAlign: "center", 
+    letterSpacing: 0.3,
+    marginTop: 4,
+  },
+  subtitle: { 
+    color: C.muted, 
+    textAlign: "center", 
+    lineHeight: 22, 
+    fontSize: 15,
+    marginTop: -2,
+  },
+  divider: { 
+    width: "100%", 
+    height: 1, 
+    backgroundColor: C.line, 
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  actions: { width: "100%", alignItems: "center", gap: 12, marginTop: 4 },
+  primaryBtn: {
+    width: "100%",
+    backgroundColor: C.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: C.accent,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  primaryBtnText: { 
+    color: C.text, 
+    fontWeight: "800", 
+    fontSize: 16,
+    letterSpacing: 0.3,
+  },
+  secondaryBtn: {
+    width: "100%",
+    backgroundColor: "transparent",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: C.line,
+  },
+  secondaryBtnText: { 
+    color: C.text, 
+    fontWeight: "700", 
+    fontSize: 16,
+    letterSpacing: 0.3,
+  },
+  bottom: { paddingHorizontal: 18, gap: 12 },
+  scottyBtn: {
+    backgroundColor: "rgba(16,17,22,0.95)",
+    borderRadius: 999,
+    paddingVertical: 15,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: C.line,
+    shadowColor: "#000",
     shadowOpacity: 0.25,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
     elevation: 6,
   },
-  scottyRow: { width: "100%", flexDirection: "row", alignItems: "center", gap: 10 },
-  scotty: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: "#0D0E12", borderWidth: 1, borderColor: C.line,
-    justifyContent: "center", alignItems: "center",
-  },
-  eye: { position: "absolute", top: 12, width: 6, height: 6, borderRadius: 6, backgroundColor: C.text },
-  smile: { position: "absolute", bottom: 9, width: 12, height: 3, borderRadius: 3, backgroundColor: C.accent },
-  scottyMute: { color: C.muted, fontSize: 12 },
-  title: { color: C.text, fontSize: 24, fontWeight: "800", textAlign: "center", letterSpacing: 0.2 },
-  subtitle: { color: C.muted, textAlign: "center", lineHeight: 20, marginTop: 2 },
-  divider: { width: "100%", height: 1, backgroundColor: C.line, marginTop: 6 },
-  actions: { width: "100%", alignItems: "center", gap: 10 },
-  oauthBtn: {
-    width: "100%",
-    borderRadius: 12,
-    paddingVertical: 12,
+  scottyIcon: {
+    width: 24, 
+    height: 24, 
+    borderRadius: 6,
+    backgroundColor: C.surface, 
+    borderWidth: 1, 
+    borderColor: C.line,
+    justifyContent: "center", 
     alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 10,
-    borderWidth: 1,
   },
-  googleBtn: { backgroundColor: "#fff", borderColor: "#E7EAF0" },
-  appleBtn: { backgroundColor: "#000", borderColor: "#000" },
-  oauthText: { color: "#fff", fontWeight: "800" },
-  oauthTextDark: { color: "#111", fontWeight: "800" },
-  linkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  linkText: { color: C.text, fontWeight: "700" },
-  linkSep: { color: C.muted },
-  bottom: { paddingHorizontal: 18, gap: 10 },
-  scottyBtn: {
-    backgroundColor: "rgba(16,17,22,0.95)",
-    borderRadius: 999,
-    paddingVertical: 13,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.22,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+  eyeSmall: { 
+    position: "absolute", 
+    top: 8, 
+    width: 4, 
+    height: 4, 
+    borderRadius: 4, 
+    backgroundColor: C.text 
   },
-  scottyBtnText: { color: C.text, fontWeight: "800" },
-  footer: { textAlign: "center", color: C.muted, fontSize: 12 },
+  smileSmall: { 
+    position: "absolute", 
+    bottom: 6, 
+    width: 8, 
+    height: 2, 
+    borderRadius: 2, 
+    backgroundColor: C.accent 
+  },
+  scottyBtnText: { 
+    color: C.text, 
+    fontWeight: "800", 
+    fontSize: 16,
+    letterSpacing: 0.3,
+  },
+  footer: { 
+    textAlign: "center", 
+    color: C.muted, 
+    fontSize: 11, 
+    letterSpacing: 0.5,
+  },
 });

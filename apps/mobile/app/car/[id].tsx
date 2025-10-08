@@ -1,12 +1,13 @@
 // apps/mobile/app/car/[id].tsx
 import { useEffect, useMemo, useState, useCallback, useLayoutEffect } from "react";
 import {
-  View, Text, Image, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, ActivityIndicator, Platform, KeyboardAvoidingView, Modal, TextInput
 } from "react-native";
 import { Stack, useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { onAuthStateChanged, type User } from "firebase/auth";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { auth, db } from "../../lib/firebase";
 import {
   doc, getDoc, updateDoc, serverTimestamp,
@@ -24,34 +25,39 @@ const C = {
 type StatusKey = "OK" | "CHECK" | "SERVICE";
 type Car = {
   id: string; make: string; model: string;
-  year: number | null; trim: string | null; photoURL: string | null;
+  year: number | null; trim: string | null;
   pinned?: boolean; oilStatus?: StatusKey; batteryStatus?: StatusKey; tiresStatus?: StatusKey;
   purchasePrice?: number; currentValue?: number; vin?: string;
   createdAt?: any; updatedAt?: any;
 };
 type Note = { id: string; text: string; createdAt?: any };
-type Mod  = { 
+type Mod = { 
   id: string; text: string; 
   brand?: string; price?: number; purchaseDate?: any; 
-  installDate?: any; photoURL?: string; storeLink?: string;
+  installDate?: any; storeLink?: string;
   hpGain?: number; torqueGain?: number; 
   createdAt?: any; 
 };
 type MaintenanceRecord = {
   id: string; type: string; description: string;
   date: any; mileage?: number; cost?: number;
-  photoURL?: string; notes?: string;
+  notes?: string;
   createdAt?: any;
 };
 type Part = {
   id: string; name: string; brand?: string; 
   price?: number; purchaseDate?: any; installed: boolean;
-  photoURL?: string; storeLink?: string;
+  storeLink?: string;
   createdAt?: any;
 };
 type Document = {
-  id: string; name: string; type: string;
-  fileURL?: string; notes?: string;
+  id: string; 
+  type: "insurance" | "registration" | "title" | "warranty" | "loan" | "inspection" | "other";
+  provider?: string;
+  policyNumber?: string;
+  expirationDate?: any;
+  amount?: number;
+  notes?: string;
   createdAt?: any;
 };
 type Issue = {
@@ -62,7 +68,6 @@ type Issue = {
   createdAt?: any;
 };
 
-// Modal data types
 type MaintenanceData = {
   type: string;
   description: string;
@@ -90,8 +95,12 @@ type IssueData = {
 };
 
 type DocumentData = {
-  name: string;
-  type: string;
+  type: "insurance" | "registration" | "title" | "warranty" | "loan" | "inspection" | "other";
+  provider: string | null;
+  policyNumber: string | null;
+  expirationDate: string | null;
+  amount: number | null;
+  notes: string | null;
 };
 
 const cycle = (v?: StatusKey): StatusKey => (v === "OK" ? "CHECK" : v === "CHECK" ? "SERVICE" : "OK");
@@ -115,13 +124,18 @@ export default function CarDetail() {
 
   const [activeTab, setActiveTab] = useState<"overview" | "maintenance" | "parts" | "docs" | "issues">("overview");
 
-  // Modal states
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [showPartModal, setShowPartModal] = useState(false);
   const [showModModal, setShowModModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [showDocModal, setShowDocModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+
+  const [editingMaintenance, setEditingMaintenance] = useState<MaintenanceRecord | null>(null);
+  const [editingPart, setEditingPart] = useState<Part | null>(null);
+  const [editingMod, setEditingMod] = useState<Mod | null>(null);
+  const [editingIssue, setEditingIssue] = useState<Issue | null>(null);
+  const [editingDocument, setEditingDocument] = useState<Document | null>(null);
 
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
@@ -134,13 +148,12 @@ export default function CarDetail() {
     return () => parent?.setOptions?.({ tabBarStyle: undefined });
   }, [navigation]);
 
-  const animatedBack = () => {
-    if ((navigation as any)?.canGoBack?.()) {
-      (navigation as any).goBack();
-    } else {
-      router.push("/(tabs)/garage");
-    }
-  };
+  // Replace the animatedBack function in [id].tsx (around line 125)
+
+const animatedBack = () => {
+  // Always navigate directly to garage, don't use goBack
+  router.push("/(tabs)/garage");
+};
 
   useEffect(() => {
     (async () => {
@@ -162,7 +175,7 @@ export default function CarDetail() {
     if (!me || !id) return;
     const notesQ = query(collection(db, "garages", me.uid, "cars", id, "notes"), orderBy("createdAt", "desc"));
     const modsQ = query(collection(db, "garages", me.uid, "cars", id, "mods"), orderBy("createdAt", "desc"));
-    const maintQ = query(collection(db, "garages", me.uid, "cars", id, "maintenance"), orderBy("date", "desc"));
+    const maintQ = query(collection(db, "garages", me.uid, "cars", id, "maintenance"), orderBy("createdAt", "desc"));
     const partsQ = query(collection(db, "garages", me.uid, "cars", id, "parts"), orderBy("createdAt", "desc"));
     const docsQ = query(collection(db, "garages", me.uid, "cars", id, "documents"), orderBy("createdAt", "desc"));
     const issuesQ = query(collection(db, "garages", me.uid, "cars", id, "issues"), orderBy("createdAt", "desc"));
@@ -197,13 +210,22 @@ export default function CarDetail() {
     }
   };
 
-  const setStatus = useCallback(async (key: "oilStatus" | "batteryStatus" | "tiresStatus") => {
+  const setStatus = useCallback(async (key: "oilStatus" | "batteryStatus" | "tiresStatus", value: StatusKey) => {
     if (!me || !car) return;
+    
+    // Update local state immediately
+    setCar({ ...car, [key]: value });
+    
+    // Save to Firestore
     try {
-      const next = cycle(car[key] as StatusKey);
-      await updateDoc(doc(db, "garages", me.uid, "cars", car.id), { [key]: next, updatedAt: serverTimestamp() });
-      setCar({ ...car, [key]: next });
-    } catch {
+      await updateDoc(doc(db, "garages", me.uid, "cars", car.id), { 
+        [key]: value, 
+        updatedAt: serverTimestamp() 
+      });
+    } catch (error) {
+      // Revert on error
+      const prev = cycle(cycle(value)); // Go back 2 cycles
+      setCar({ ...car, [key]: prev });
       Alert.alert("Update failed", "Could not update status.");
     }
   }, [me, car]);
@@ -237,8 +259,13 @@ export default function CarDetail() {
 
   const deleteDocument = async (docId: string) => {
     if (!me || !id) return;
-    try { await deleteDoc(doc(db, "garages", me.uid, "cars", id, "documents", docId)); }
-    catch { Alert.alert("Error", "Failed to delete document."); }
+    Alert.alert("Delete Document", "Are you sure?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try { await deleteDoc(doc(db, "garages", me.uid, "cars", id, "documents", docId)); }
+        catch { Alert.alert("Error", "Failed to delete document."); }
+      }}
+    ]);
   };
 
   const toggleIssueStatus = async (issueId: string, currentStatus: "open" | "fixed") => {
@@ -268,9 +295,6 @@ export default function CarDetail() {
     catch { Alert.alert("Error", "Failed to delete mod."); }
   };
 
-  const goAskScotty = () => {
-    router.push({ pathname: "/(tabs)/scotty", params: { carId: car!.id, title } });
-  };
 
   const totalInvested = useMemo(() => {
     const purchase = car?.purchasePrice || 0;
@@ -289,6 +313,34 @@ export default function CarDetail() {
     return mods.reduce((sum, m) => sum + (m.hpGain || 0), 0);
   }, [mods]);
 
+  const askScottyAboutCar = async () => {
+    if (!car || !id) return;
+    
+    const specs = `${title}${car.trim ? ` ${car.trim}` : ""}${car.vin ? ` (VIN: ${car.vin})` : ""}`;
+    
+    const modsList = mods.length > 0 
+      ? `\n\nMods: ${mods.map(m => `${m.text}${m.brand ? ` (${m.brand})` : ""}${m.hpGain ? ` +${m.hpGain}HP` : ""}`).join(", ")}`
+      : "";
+    
+    const issuesList = issues.filter(i => i.status === "open").length > 0
+      ? `\n\nIssues: ${issues.filter(i => i.status === "open").map(i => `${i.title} (${i.priority})`).join(", ")}`
+      : "";
+    
+    const recentMaint = maintenance.slice(0, 3).length > 0
+      ? `\n\nRecent maintenance: ${maintenance.slice(0, 3).map(m => `${m.type}`).join(", ")}`
+      : "";
+    
+    const contextMessage = `${specs}${modsList}${issuesList}${recentMaint}`;
+    
+    await AsyncStorage.setItem("@ovrtk/scotty.newChat", JSON.stringify({
+      title,
+      message: contextMessage,
+      timestamp: Date.now()
+    }));
+    
+    router.push("/(tabs)/scotty");
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
@@ -306,6 +358,10 @@ export default function CarDetail() {
     );
   }
 
+  const insuranceDocs = documents.filter(d => d.type === "insurance");
+  const registrationDocs = documents.filter(d => d.type === "registration");
+  const otherDocs = documents.filter(d => !["insurance", "registration"].includes(d.type));
+
   return (
     <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -322,62 +378,40 @@ export default function CarDetail() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabsRow} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
-          <TabButton label="Overview" active={activeTab === "overview"} onPress={() => setActiveTab("overview")} />
-          <TabButton label="Maintenance" active={activeTab === "maintenance"} onPress={() => setActiveTab("maintenance")} />
-          <TabButton label="Parts" active={activeTab === "parts"} onPress={() => setActiveTab("parts")} />
-          <TabButton label="Docs" active={activeTab === "docs"} onPress={() => setActiveTab("docs")} />
-          <TabButton label="Issues" active={activeTab === "issues"} onPress={() => setActiveTab("issues")} />
-        </ScrollView>
+        <View style={s.tabsRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' }}>
+            <TabButton label="Overview" active={activeTab === "overview"} onPress={() => setActiveTab("overview")} />
+            <TabButton label="Maintenance" active={activeTab === "maintenance"} onPress={() => setActiveTab("maintenance")} />
+            <TabButton label="Parts" active={activeTab === "parts"} onPress={() => setActiveTab("parts")} />
+            <TabButton label="Docs" active={activeTab === "docs"} onPress={() => setActiveTab("docs")} />
+            <TabButton label="Issues" active={activeTab === "issues"} onPress={() => setActiveTab("issues")} />
+          </ScrollView>
+        </View>
 
         <ScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 140 }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="automatic"
         >
           {activeTab === "overview" && (
             <>
-              {car.photoURL ? (
-                <View style={s.heroWrap}>
-                  <Image source={{ uri: car.photoURL }} style={s.heroImg} />
-                  <View style={s.heroOverlay} />
-                  <View style={s.heroRow}>
-                    <View style={s.titleBlock}>
-                      {car.pinned ? (
-                        <View style={s.badgePin}>
-                          <Ionicons name="star" size={12} color="#111" />
-                          <Text style={s.badgePinTxt}>Pinned</Text>
-                        </View>
-                      ) : null}
-                      <Text style={s.titleTxt}>{title}</Text>
-                      {car.trim ? <Text style={s.subtitleTxt}>{car.trim}</Text> : null}
+              <View style={[s.card, { marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}>
+                <View style={s.titleBlock}>
+                  {car.pinned ? (
+                    <View style={s.badgePin}>
+                      <Ionicons name="star" size={12} color="#111" />
+                      <Text style={s.badgePinTxt}>Pinned</Text>
                     </View>
-
-                    <TouchableOpacity onPress={togglePinned} disabled={pinBusy} style={[s.pinBtn, car.pinned && { borderColor: C.accent }]} activeOpacity={0.9}>
-                      <Ionicons name={car.pinned ? "star" : "star-outline"} size={20} color={car.pinned ? C.accent : C.muted} />
-                      <Text style={[s.pinTxt, car.pinned && { color: C.accent }]}>{car.pinned ? "Unpin" : "Pin"}</Text>
-                    </TouchableOpacity>
-                  </View>
+                  ) : null}
+                  <Text style={[s.titleTxt, { fontSize: 20, color: C.text }]}>{title}</Text>
+                  {car.trim ? <Text style={s.subtitleTxt}>{car.trim}</Text> : null}
                 </View>
-              ) : (
-                <View style={[s.card, { marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}>
-                  <View style={s.titleBlock}>
-                    {car.pinned ? (
-                      <View style={s.badgePin}>
-                        <Ionicons name="star" size={12} color="#111" />
-                        <Text style={s.badgePinTxt}>Pinned</Text>
-                      </View>
-                    ) : null}
-                    <Text style={[s.titleTxt, { fontSize: 20, color: C.text }]}>{title}</Text>
-                    {car.trim ? <Text style={s.subtitleTxt}>{car.trim}</Text> : null}
-                  </View>
-                  <TouchableOpacity onPress={togglePinned} disabled={pinBusy} style={[s.pinBtn, car.pinned && { borderColor: C.accent }]} activeOpacity={0.9}>
-                    <Ionicons name={car.pinned ? "star" : "star-outline"} size={20} color={car.pinned ? C.accent : C.muted} />
-                    <Text style={[s.pinTxt, car.pinned && { color: C.accent }]}>{car.pinned ? "Unpin" : "Pin"}</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                <TouchableOpacity onPress={togglePinned} disabled={pinBusy} style={[s.pinBtn, car.pinned && { borderColor: C.accent }]} activeOpacity={0.9}>
+                  <Ionicons name={car.pinned ? "star" : "star-outline"} size={20} color={car.pinned ? C.accent : C.muted} />
+                  <Text style={[s.pinTxt, car.pinned && { color: C.accent }]}>{car.pinned ? "Unpin" : "Pin"}</Text>
+                </TouchableOpacity>
+              </View>
 
               <View style={s.card}>
                 <Text style={s.cardTitle}>Value Tracking</Text>
@@ -407,9 +441,9 @@ export default function CarDetail() {
               <View style={s.card}>
                 <Text style={s.cardTitle}>Quick Status</Text>
                 <View style={s.chipsRow}>
-                  <StatusChip icon="speedometer-outline" label="Oil" value={car.oilStatus || "OK"} onPress={() => setStatus("oilStatus")} />
-                  <StatusChip icon="flash-outline" label="Battery" value={car.batteryStatus || "OK"} onPress={() => setStatus("batteryStatus")} />
-                  <StatusChip icon="warning-outline" label="Tires" value={car.tiresStatus || "OK"} onPress={() => setStatus("tiresStatus")} />
+                  <StatusChip icon="speedometer-outline" label="Oil" value={car.oilStatus || "OK"} onPress={() => setStatus("oilStatus", cycle(car.oilStatus))} />
+                  <StatusChip icon="flash-outline" label="Battery" value={car.batteryStatus || "OK"} onPress={() => setStatus("batteryStatus", cycle(car.batteryStatus))} />
+                  <StatusChip icon="warning-outline" label="Tires" value={car.tiresStatus || "OK"} onPress={() => setStatus("tiresStatus", cycle(car.tiresStatus))} />
                 </View>
                 <Text style={s.hintRow}>Tap a chip to cycle status.</Text>
               </View>
@@ -429,9 +463,9 @@ export default function CarDetail() {
               <View style={s.card}>
                 <Text style={s.cardTitle}>Ask Scotty</Text>
                 <Text style={{ color: C.muted, marginTop: 6, marginBottom: 10 }}>
-                  Need advice about this build? Jump to Scotty with this car's context.
+                  Get expert advice about your {title}. Scotty will have full context of your mods, issues, and maintenance history.
                 </Text>
-                <TouchableOpacity onPress={goAskScotty} style={s.primary} activeOpacity={0.9}>
+                <TouchableOpacity onPress={askScottyAboutCar} style={s.primary} activeOpacity={0.9}>
                   <Ionicons name="chatbubbles-outline" size={18} color="#fff" />
                   <Text style={s.primaryTxt}>Ask Scotty about this car</Text>
                 </TouchableOpacity>
@@ -489,12 +523,17 @@ export default function CarDetail() {
                           <View style={{ flexDirection: "row", gap: 12, marginTop: 6 }}>
                             {m.mileage && <Text style={s.maintMeta}>{m.mileage.toLocaleString()} mi</Text>}
                             {m.cost && <Text style={s.maintMeta}>${m.cost.toFixed(2)}</Text>}
-                            {m.date && <Text style={s.maintMeta}>{new Date(m.date.toDate()).toLocaleDateString()}</Text>}
+                            {m.createdAt && <Text style={s.maintMeta}>{new Date(m.createdAt.toDate()).toLocaleDateString()}</Text>}
                           </View>
                         </View>
-                        <TouchableOpacity onPress={() => deleteMaintenance(m.id)} style={s.iconBtn}>
-                          <Ionicons name="trash-outline" size={18} color={C.muted} />
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          <TouchableOpacity onPress={() => { setEditingMaintenance(m); setShowMaintenanceModal(true); }} style={s.iconBtn}>
+                            <Ionicons name="create-outline" size={18} color={C.text} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => deleteMaintenance(m.id)} style={s.iconBtn}>
+                            <Ionicons name="trash-outline" size={18} color={C.muted} />
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -530,7 +569,13 @@ export default function CarDetail() {
                   <Text style={{ color: C.muted, marginTop: 4 }}>No installed parts yet.</Text>
                 ) : (
                   parts.filter(p => p.installed).map(p => (
-                    <PartItem key={p.id} part={p} onToggle={togglePartInstalled} onDelete={deletePart} />
+                    <PartItem 
+                      key={p.id} 
+                      part={p} 
+                      onToggle={togglePartInstalled} 
+                      onDelete={deletePart}
+                      onEdit={() => { setEditingPart(p); setShowPartModal(true); }}
+                    />
                   ))
                 )}
 
@@ -539,7 +584,13 @@ export default function CarDetail() {
                   <Text style={{ color: C.muted, marginTop: 4 }}>No parts waiting to be installed.</Text>
                 ) : (
                   parts.filter(p => !p.installed).map(p => (
-                    <PartItem key={p.id} part={p} onToggle={togglePartInstalled} onDelete={deletePart} />
+                    <PartItem 
+                      key={p.id} 
+                      part={p} 
+                      onToggle={togglePartInstalled} 
+                      onDelete={deletePart}
+                      onEdit={() => { setEditingPart(p); setShowPartModal(true); }}
+                    />
                   ))
                 )}
               </View>
@@ -565,9 +616,14 @@ export default function CarDetail() {
                           {m.hpGain && <Text style={[s.modMeta, { color: C.good }]}>+{m.hpGain} HP</Text>}
                         </View>
                       </View>
-                      <TouchableOpacity onPress={() => removeMod(m.id)} style={s.iconBtn}>
-                        <Ionicons name="trash-outline" size={16} color={C.muted} />
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <TouchableOpacity onPress={() => { setEditingMod(m); setShowModModal(true); }} style={s.iconBtn}>
+                          <Ionicons name="create-outline" size={16} color={C.text} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => removeMod(m.id)} style={s.iconBtn}>
+                          <Ionicons name="trash-outline" size={16} color={C.muted} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))
                 )}
@@ -576,32 +632,71 @@ export default function CarDetail() {
           )}
 
           {activeTab === "docs" && (
-            <View style={s.card}>
-              <View style={s.cardHeader}>
-                <Text style={s.cardTitle}>Documents</Text>
-                <TouchableOpacity onPress={() => setShowDocModal(true)}>
-                  <Text style={{ color: C.accent, fontWeight: "800" }}>Add</Text>
-                </TouchableOpacity>
+            <>
+              <View style={s.card}>
+                <View style={s.cardHeader}>
+                  <Text style={s.cardTitle}>Insurance</Text>
+                  <TouchableOpacity onPress={() => { setEditingDocument(null); setShowDocModal(true); }}>
+                    <Text style={{ color: C.accent, fontWeight: "800" }}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+                {insuranceDocs.length === 0 ? (
+                  <Text style={{ color: C.muted, marginTop: 6 }}>No insurance records.</Text>
+                ) : (
+                  <View style={{ marginTop: 12, gap: 10 }}>
+                    {insuranceDocs.map(d => (
+                      <DocumentItem 
+                        key={d.id} 
+                        document={d} 
+                        onDelete={deleteDocument}
+                        onEdit={() => { setEditingDocument(d); setShowDocModal(true); }}
+                      />
+                    ))}
+                  </View>
+                )}
               </View>
-              {documents.length === 0 ? (
-                <Text style={{ color: C.muted, marginTop: 6 }}>No documents stored yet.</Text>
-              ) : (
-                <View style={{ marginTop: 12, gap: 8 }}>
-                  {documents.map(d => (
-                    <View key={d.id} style={s.docItem}>
-                      <Ionicons name="document-text-outline" size={20} color={C.accent} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.docName}>{d.name}</Text>
-                        <Text style={s.docType}>{d.type}</Text>
-                      </View>
-                      <TouchableOpacity onPress={() => deleteDocument(d.id)} style={s.iconBtn}>
-                        <Ionicons name="trash-outline" size={16} color={C.muted} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
+
+              <View style={s.card}>
+                <View style={s.cardHeader}>
+                  <Text style={s.cardTitle}>Registration & Title</Text>
+                  <TouchableOpacity onPress={() => { setEditingDocument(null); setShowDocModal(true); }}>
+                    <Text style={{ color: C.accent, fontWeight: "800" }}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+                {registrationDocs.length === 0 ? (
+                  <Text style={{ color: C.muted, marginTop: 6 }}>No registration/title records.</Text>
+                ) : (
+                  <View style={{ marginTop: 12, gap: 10 }}>
+                    {registrationDocs.map(d => (
+                      <DocumentItem 
+                        key={d.id} 
+                        document={d} 
+                        onDelete={deleteDocument}
+                        onEdit={() => { setEditingDocument(d); setShowDocModal(true); }}
+                      />
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {otherDocs.length > 0 && (
+                <View style={s.card}>
+                  <View style={s.cardHeader}>
+                    <Text style={s.cardTitle}>Other Documents</Text>
+                  </View>
+                  <View style={{ marginTop: 12, gap: 10 }}>
+                    {otherDocs.map(d => (
+                      <DocumentItem 
+                        key={d.id} 
+                        document={d} 
+                        onDelete={deleteDocument}
+                        onEdit={() => { setEditingDocument(d); setShowDocModal(true); }}
+                      />
+                    ))}
+                  </View>
                 </View>
               )}
-            </View>
+            </>
           )}
 
           {activeTab === "issues" && (
@@ -618,7 +713,13 @@ export default function CarDetail() {
                 ) : (
                   <View style={{ marginTop: 12, gap: 10 }}>
                     {issues.filter(i => i.status === "open").map(issue => (
-                      <IssueItem key={issue.id} issue={issue} onToggle={toggleIssueStatus} onDelete={deleteIssue} />
+                      <IssueItem 
+                        key={issue.id} 
+                        issue={issue} 
+                        onToggle={toggleIssueStatus} 
+                        onDelete={deleteIssue}
+                        onEdit={() => { setEditingIssue(issue); setShowIssueModal(true); }}
+                      />
                     ))}
                   </View>
                 )}
@@ -629,7 +730,13 @@ export default function CarDetail() {
                   <Text style={s.cardTitle}>Fixed Issues</Text>
                   <View style={{ marginTop: 12, gap: 10 }}>
                     {issues.filter(i => i.status === "fixed").map(issue => (
-                      <IssueItem key={issue.id} issue={issue} onToggle={toggleIssueStatus} onDelete={deleteIssue} />
+                      <IssueItem 
+                        key={issue.id} 
+                        issue={issue} 
+                        onToggle={toggleIssueStatus} 
+                        onDelete={deleteIssue}
+                        onEdit={() => { setEditingIssue(issue); setShowIssueModal(true); }}
+                      />
                     ))}
                   </View>
                 </View>
@@ -642,83 +749,128 @@ export default function CarDetail() {
       {/* MODALS */}
       <MaintenanceModal 
         visible={showMaintenanceModal} 
-        onClose={() => setShowMaintenanceModal(false)}
+        onClose={() => { setShowMaintenanceModal(false); setEditingMaintenance(null); }}
+        editing={editingMaintenance}
         onSave={async (data: MaintenanceData) => {
           if (!me || !id) return;
           try {
-            await addDoc(collection(db, "garages", me.uid, "cars", id, "maintenance"), {
-              ...data,
-              date: serverTimestamp(),
-              createdAt: serverTimestamp(),
-            });
+            if (editingMaintenance) {
+              await updateDoc(doc(db, "garages", me.uid, "cars", id, "maintenance", editingMaintenance.id), data);
+            } else {
+              await addDoc(collection(db, "garages", me.uid, "cars", id, "maintenance"), {
+                ...data,
+                createdAt: serverTimestamp(),
+              });
+            }
             setShowMaintenanceModal(false);
-          } catch { Alert.alert("Error", "Failed to add maintenance record."); }
+            setEditingMaintenance(null);
+          } catch { Alert.alert("Error", "Failed to save maintenance record."); }
         }}
       />
 
       <PartModal 
         visible={showPartModal}
-        onClose={() => setShowPartModal(false)}
+        onClose={() => { setShowPartModal(false); setEditingPart(null); }}
+        editing={editingPart}
         onSave={async (data: PartData) => {
           if (!me || !id) return;
           try {
-            await addDoc(collection(db, "garages", me.uid, "cars", id, "parts"), {
-              ...data,
-              installed: false,
-              purchaseDate: serverTimestamp(),
-              createdAt: serverTimestamp(),
-            });
+            if (editingPart) {
+              await updateDoc(doc(db, "garages", me.uid, "cars", id, "parts", editingPart.id), data);
+            } else {
+              await addDoc(collection(db, "garages", me.uid, "cars", id, "parts"), {
+                ...data,
+                installed: false,
+                purchaseDate: serverTimestamp(),
+                createdAt: serverTimestamp(),
+              });
+            }
             setShowPartModal(false);
-          } catch { Alert.alert("Error", "Failed to add part."); }
+            setEditingPart(null);
+          } catch { Alert.alert("Error", "Failed to save part."); }
         }}
       />
 
       <ModModal 
         visible={showModModal}
-        onClose={() => setShowModModal(false)}
+        onClose={() => { setShowModModal(false); setEditingMod(null); }}
+        editing={editingMod}
         onSave={async (data: ModData) => {
           if (!me || !id) return;
           try {
-            await addDoc(collection(db, "garages", me.uid, "cars", id, "mods"), {
-              ...data,
-              installDate: serverTimestamp(),
-              createdAt: serverTimestamp(),
-            });
+            if (editingMod) {
+              await updateDoc(doc(db, "garages", me.uid, "cars", id, "mods", editingMod.id), data);
+            } else {
+              await addDoc(collection(db, "garages", me.uid, "cars", id, "mods"), {
+                ...data,
+                installDate: serverTimestamp(),
+                createdAt: serverTimestamp(),
+              });
+            }
             setShowModModal(false);
-          } catch { Alert.alert("Error", "Failed to add mod."); }
+            setEditingMod(null);
+          } catch { Alert.alert("Error", "Failed to save mod."); }
         }}
       />
 
       <IssueModal 
         visible={showIssueModal}
-        onClose={() => setShowIssueModal(false)}
+        onClose={() => { setShowIssueModal(false); setEditingIssue(null); }}
+        editing={editingIssue}
         onSave={async (data: IssueData) => {
           if (!me || !id) return;
           try {
-            await addDoc(collection(db, "garages", me.uid, "cars", id, "issues"), {
-              ...data,
-              status: "open",
-              createdAt: serverTimestamp(),
-            });
+            if (editingIssue) {
+              await updateDoc(doc(db, "garages", me.uid, "cars", id, "issues", editingIssue.id), data);
+            } else {
+              await addDoc(collection(db, "garages", me.uid, "cars", id, "issues"), {
+                ...data,
+                status: "open",
+                createdAt: serverTimestamp(),
+              });
+            }
             setShowIssueModal(false);
-          } catch { Alert.alert("Error", "Failed to add issue."); }
+            setEditingIssue(null);
+          } catch { Alert.alert("Error", "Failed to save issue."); }
         }}
       />
 
-      <DocumentModal 
-        visible={showDocModal}
-        onClose={() => setShowDocModal(false)}
-        onSave={async (data: DocumentData) => {
-          if (!me || !id) return;
-          try {
-            await addDoc(collection(db, "garages", me.uid, "cars", id, "documents"), {
-              ...data,
-              createdAt: serverTimestamp(),
-            });
-            setShowDocModal(false);
-          } catch { Alert.alert("Error", "Failed to add document."); }
-        }}
-      />
+<DocumentModal 
+  visible={showDocModal}
+  onClose={() => { setShowDocModal(false); setEditingDocument(null); }}
+  editing={editingDocument}
+  onSave={async (data: DocumentData) => {
+    if (!me || !id) {
+      console.log('Missing auth or car ID:', { me: !!me, id });
+      Alert.alert("Error", "Missing authentication or car ID");
+      return;
+    }
+    
+    try {
+      console.log('Attempting to save document:', data);
+      
+      if (editingDocument) {
+        console.log('Updating existing document:', editingDocument.id);
+        await updateDoc(doc(db, "garages", me.uid, "cars", id, "documents", editingDocument.id), data);
+      } else {
+        console.log('Creating new document');
+        const docRef = await addDoc(collection(db, "garages", me.uid, "cars", id, "documents"), {
+          ...data,
+          createdAt: serverTimestamp(),
+        });
+        console.log('Document created with ID:', docRef.id);
+      }
+      
+      setShowDocModal(false);
+      setEditingDocument(null);
+    } catch (error: any) {
+      console.error("Full error details:", error);
+      console.error("Error code:", error.code);
+      console.error("Error message:", error.message);
+      Alert.alert("Error", `Failed to save: ${error.message}`);
+    }
+  }}
+/>
 
       <NoteModal 
         visible={showNoteModal}
@@ -739,15 +891,30 @@ export default function CarDetail() {
 }
 
 /* MODAL COMPONENTS */
-function MaintenanceModal({ visible, onClose, onSave }: { 
+function MaintenanceModal({ visible, onClose, onSave, editing }: { 
   visible: boolean; 
   onClose: () => void; 
   onSave: (data: MaintenanceData) => void;
+  editing: MaintenanceRecord | null;
 }) {
   const [type, setType] = useState("");
   const [description, setDescription] = useState("");
   const [mileage, setMileage] = useState("");
   const [cost, setCost] = useState("");
+
+  useEffect(() => {
+    if (editing) {
+      setType(editing.type);
+      setDescription(editing.description);
+      setMileage(editing.mileage?.toString() || "");
+      setCost(editing.cost?.toString() || "");
+    } else {
+      setType("");
+      setDescription("");
+      setMileage("");
+      setCost("");
+    }
+  }, [editing, visible]);
 
   const handleSave = () => {
     if (!type.trim() || !description.trim()) {
@@ -760,10 +927,6 @@ function MaintenanceModal({ visible, onClose, onSave }: {
       mileage: mileage ? parseInt(mileage) : null,
       cost: cost ? parseFloat(cost) : null,
     });
-    setType("");
-    setDescription("");
-    setMileage("");
-    setCost("");
   };
 
   return (
@@ -772,7 +935,7 @@ function MaintenanceModal({ visible, onClose, onSave }: {
         <View style={s.modalCard}>
           <View style={s.modalHeader}>
             <Ionicons name="build-outline" size={24} color={C.accent} />
-            <Text style={s.modalTitle}>Add Maintenance</Text>
+            <Text style={s.modalTitle}>{editing ? "Edit" : "Add"} Maintenance</Text>
             <TouchableOpacity onPress={onClose} style={s.modalClose}>
               <Ionicons name="close" size={24} color={C.muted} />
             </TouchableOpacity>
@@ -819,14 +982,27 @@ function MaintenanceModal({ visible, onClose, onSave }: {
   );
 }
 
-function PartModal({ visible, onClose, onSave }: {
+function PartModal({ visible, onClose, onSave, editing }: {
   visible: boolean;
   onClose: () => void;
   onSave: (data: PartData) => void;
+  editing: Part | null;
 }) {
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [price, setPrice] = useState("");
+
+  useEffect(() => {
+    if (editing) {
+      setName(editing.name);
+      setBrand(editing.brand || "");
+      setPrice(editing.price?.toString() || "");
+    } else {
+      setName("");
+      setBrand("");
+      setPrice("");
+    }
+  }, [editing, visible]);
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -838,9 +1014,6 @@ function PartModal({ visible, onClose, onSave }: {
       brand: brand.trim() || null,
       price: price ? parseFloat(price) : null,
     });
-    setName("");
-    setBrand("");
-    setPrice("");
   };
 
   return (
@@ -849,7 +1022,7 @@ function PartModal({ visible, onClose, onSave }: {
         <View style={s.modalCard}>
           <View style={s.modalHeader}>
             <Ionicons name="settings-outline" size={24} color={C.accent} />
-            <Text style={s.modalTitle}>Add Part</Text>
+            <Text style={s.modalTitle}>{editing ? "Edit" : "Add"} Part</Text>
             <TouchableOpacity onPress={onClose} style={s.modalClose}>
               <Ionicons name="close" size={24} color={C.muted} />
             </TouchableOpacity>
@@ -887,15 +1060,30 @@ function PartModal({ visible, onClose, onSave }: {
   );
 }
 
-function ModModal({ visible, onClose, onSave }: {
+function ModModal({ visible, onClose, onSave, editing }: {
   visible: boolean;
   onClose: () => void;
   onSave: (data: ModData) => void;
+  editing: Mod | null;
 }) {
   const [text, setText] = useState("");
   const [brand, setBrand] = useState("");
   const [price, setPrice] = useState("");
   const [hpGain, setHpGain] = useState("");
+
+  useEffect(() => {
+    if (editing) {
+      setText(editing.text);
+      setBrand(editing.brand || "");
+      setPrice(editing.price?.toString() || "");
+      setHpGain(editing.hpGain?.toString() || "");
+    } else {
+      setText("");
+      setBrand("");
+      setPrice("");
+      setHpGain("");
+    }
+  }, [editing, visible]);
 
   const handleSave = () => {
     if (!text.trim()) {
@@ -908,10 +1096,6 @@ function ModModal({ visible, onClose, onSave }: {
       price: price ? parseFloat(price) : null,
       hpGain: hpGain ? parseInt(hpGain) : null,
     });
-    setText("");
-    setBrand("");
-    setPrice("");
-    setHpGain("");
   };
 
   return (
@@ -920,7 +1104,7 @@ function ModModal({ visible, onClose, onSave }: {
         <View style={s.modalCard}>
           <View style={s.modalHeader}>
             <Ionicons name="construct-outline" size={24} color={C.accent} />
-            <Text style={s.modalTitle}>Add Performance Mod</Text>
+            <Text style={s.modalTitle}>{editing ? "Edit" : "Add"} Performance Mod</Text>
             <TouchableOpacity onPress={onClose} style={s.modalClose}>
               <Ionicons name="close" size={24} color={C.muted} />
             </TouchableOpacity>
@@ -966,14 +1150,27 @@ function ModModal({ visible, onClose, onSave }: {
   );
 }
 
-function IssueModal({ visible, onClose, onSave }: {
+function IssueModal({ visible, onClose, onSave, editing }: {
   visible: boolean;
   onClose: () => void;
   onSave: (data: IssueData) => void;
+  editing: Issue | null;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"urgent" | "soon" | "eventually">("soon");
+
+  useEffect(() => {
+    if (editing) {
+      setTitle(editing.title);
+      setDescription(editing.description || "");
+      setPriority(editing.priority);
+    } else {
+      setTitle("");
+      setDescription("");
+      setPriority("soon");
+    }
+  }, [editing, visible]);
 
   const handleSave = () => {
     if (!title.trim()) {
@@ -985,9 +1182,6 @@ function IssueModal({ visible, onClose, onSave }: {
       description: description.trim() || null,
       priority,
     });
-    setTitle("");
-    setDescription("");
-    setPriority("soon");
   };
 
   return (
@@ -996,7 +1190,7 @@ function IssueModal({ visible, onClose, onSave }: {
         <View style={s.modalCard}>
           <View style={s.modalHeader}>
             <Ionicons name="alert-circle-outline" size={24} color={C.accent} />
-            <Text style={s.modalTitle}>Add Issue</Text>
+            <Text style={s.modalTitle}>{editing ? "Edit" : "Add"} Issue</Text>
             <TouchableOpacity onPress={onClose} style={s.modalClose}>
               <Ionicons name="close" size={24} color={C.muted} />
             </TouchableOpacity>
@@ -1040,58 +1234,136 @@ function IssueModal({ visible, onClose, onSave }: {
   );
 }
 
-function DocumentModal({ visible, onClose, onSave }: {
+function DocumentModal({ visible, onClose, onSave, editing }: {
   visible: boolean;
   onClose: () => void;
   onSave: (data: DocumentData) => void;
+  editing: Document | null;
 }) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState("");
+  const [docType, setDocType] = useState<"insurance" | "registration" | "title" | "warranty" | "loan" | "inspection" | "other">("insurance");
+  const [provider, setProvider] = useState("");
+  const [policyNumber, setPolicyNumber] = useState("");
+  const [expirationDate, setExpirationDate] = useState("");
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    if (visible && !editing) {
+      setDocType("insurance");
+      setProvider("");
+      setPolicyNumber("");
+      setExpirationDate("");
+      setAmount("");
+      setNotes("");
+    } else if (editing) {
+      setDocType(editing.type);
+      setProvider(editing.provider || "");
+      setPolicyNumber(editing.policyNumber || "");
+      setExpirationDate(editing.expirationDate || "");
+      setAmount(editing.amount?.toString() || "");
+      setNotes(editing.notes || "");
+    }
+  }, [editing, visible]);
 
   const handleSave = () => {
-    if (!name.trim()) {
-      Alert.alert("Missing Info", "Document name is required.");
+    if (!provider.trim() && !policyNumber.trim() && !expirationDate.trim() && !amount && !notes.trim()) {
+      Alert.alert("Missing Info", "Please fill in at least one field.");
       return;
     }
+
     onSave({
-      name: name.trim(),
-      type: type.trim() || "other",
+      type: docType,
+      provider: provider.trim() || null,
+      policyNumber: policyNumber.trim() || null,
+      expirationDate: expirationDate.trim() || null,
+      amount: amount && !isNaN(parseFloat(amount)) ? parseFloat(amount) : null,
+      notes: notes.trim() || null,
     });
-    setName("");
-    setType("");
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade">
       <BlurView intensity={20} style={s.modalOverlay}>
-        <View style={s.modalCard}>
-          <View style={s.modalHeader}>
-            <Ionicons name="document-text-outline" size={24} color={C.accent} />
-            <Text style={s.modalTitle}>Add Document</Text>
-            <TouchableOpacity onPress={onClose} style={s.modalClose}>
-              <Ionicons name="close" size={24} color={C.muted} />
-            </TouchableOpacity>
-          </View>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        >
+          <ScrollView 
+            contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center", paddingVertical: 40 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={s.modalCard}>
+              <View style={s.modalHeader}>
+                <Ionicons name="document-text-outline" size={24} color={C.accent} />
+                <Text style={s.modalTitle}>{editing ? "Edit" : "Add"} Document</Text>
+                <TouchableOpacity onPress={onClose} style={s.modalClose}>
+                  <Ionicons name="close" size={24} color={C.muted} />
+                </TouchableOpacity>
+              </View>
 
-          <TextInput
-            style={s.modalInput}
-            placeholder="Document Name (e.g., Insurance)"
-            placeholderTextColor={C.muted}
-            value={name}
-            onChangeText={setName}
-          />
-          <TextInput
-            style={s.modalInput}
-            placeholder="Type (e.g., insurance, registration)"
-            placeholderTextColor={C.muted}
-            value={type}
-            onChangeText={setType}
-          />
+              <Text style={{ color: C.muted, fontSize: 12, marginBottom: 8 }}>Document Type</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                {(["insurance", "registration", "title", "warranty", "loan", "inspection", "other"] as const).map((type) => (
+                  <TouchableOpacity 
+                    key={type} 
+                    onPress={() => setDocType(type)} 
+                    style={[s.docTypeBtn, docType === type && s.docTypeActive]}
+                  >
+                    <Text style={[s.docTypeTxt, docType === type && { color: "#fff" }]}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-          <TouchableOpacity onPress={handleSave} style={s.modalBtn}>
-            <Text style={s.modalBtnTxt}>Save</Text>
-          </TouchableOpacity>
-        </View>
+              <TextInput
+                style={s.modalInput}
+                placeholder={docType === "insurance" ? "Insurance Provider" : docType === "registration" ? "DMV/Agency" : "Provider/Source"}
+                placeholderTextColor={C.muted}
+                value={provider}
+                onChangeText={setProvider}
+              />
+
+              <TextInput
+                style={s.modalInput}
+                placeholder={docType === "insurance" ? "Policy Number" : "ID/Reference Number"}
+                placeholderTextColor={C.muted}
+                value={policyNumber}
+                onChangeText={setPolicyNumber}
+              />
+
+              <TextInput
+                style={s.modalInput}
+                placeholder="Expiration Date (MM/DD/YYYY)"
+                placeholderTextColor={C.muted}
+                value={expirationDate}
+                onChangeText={setExpirationDate}
+              />
+
+              <TextInput
+                style={s.modalInput}
+                placeholder={docType === "insurance" ? "Premium Amount" : docType === "loan" ? "Loan Amount" : "Amount (optional)"}
+                placeholderTextColor={C.muted}
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="decimal-pad"
+              />
+
+              <TextInput
+                style={[s.modalInput, { height: 80 }]}
+                placeholder="Notes (optional)"
+                placeholderTextColor={C.muted}
+                value={notes}
+                onChangeText={setNotes}
+                multiline
+              />
+
+              <TouchableOpacity onPress={handleSave} style={s.modalBtn}>
+                <Text style={s.modalBtnTxt}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </BlurView>
     </Modal>
   );
@@ -1179,10 +1451,11 @@ function StatusChip({ icon, label, value, onPress }:{
   );
 }
 
-function PartItem({ part, onToggle, onDelete }: { 
+function PartItem({ part, onToggle, onDelete, onEdit }: { 
   part: Part; 
   onToggle: (id: string, installed: boolean) => void;
   onDelete: (id: string) => void;
+  onEdit: () => void;
 }) {
   return (
     <View style={s.partItem}>
@@ -1200,17 +1473,23 @@ function PartItem({ part, onToggle, onDelete }: {
           {part.price && <Text style={s.partMeta}>${part.price.toFixed(2)}</Text>}
         </View>
       </View>
-      <TouchableOpacity onPress={() => onDelete(part.id)} style={s.iconBtn}>
-        <Ionicons name="trash-outline" size={16} color={C.muted} />
-      </TouchableOpacity>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <TouchableOpacity onPress={onEdit} style={s.iconBtn}>
+          <Ionicons name="create-outline" size={16} color={C.text} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => onDelete(part.id)} style={s.iconBtn}>
+          <Ionicons name="trash-outline" size={16} color={C.muted} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
-function IssueItem({ issue, onToggle, onDelete }: {
+function IssueItem({ issue, onToggle, onDelete, onEdit }: {
   issue: Issue;
   onToggle: (id: string, status: "open" | "fixed") => void;
   onDelete: (id: string) => void;
+  onEdit: () => void;
 }) {
   const priorityColor = issue.priority === "urgent" ? C.accent : issue.priority === "soon" ? C.warn : C.muted;
   return (
@@ -1231,9 +1510,83 @@ function IssueItem({ issue, onToggle, onDelete }: {
           {issue.priority.toUpperCase()}
         </Text>
       </View>
-      <TouchableOpacity onPress={() => onDelete(issue.id)} style={s.iconBtn}>
-        <Ionicons name="trash-outline" size={16} color={C.muted} />
-      </TouchableOpacity>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <TouchableOpacity onPress={onEdit} style={s.iconBtn}>
+          <Ionicons name="create-outline" size={16} color={C.text} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => onDelete(issue.id)} style={s.iconBtn}>
+          <Ionicons name="trash-outline" size={16} color={C.muted} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function DocumentItem({ document, onDelete, onEdit }: {
+  document: Document;
+  onDelete: (id: string) => void;
+  onEdit: () => void;
+}) {
+  const getDocIcon = (type: string) => {
+    switch (type) {
+      case "insurance": return "shield-checkmark";
+      case "registration": return "card";
+      case "title": return "ribbon";
+      case "warranty": return "shield";
+      case "loan": return "cash";
+      case "inspection": return "checkmark-done";
+      default: return "document-text";
+    }
+  };
+
+  const isExpiringSoon = (expirationDate?: any) => {
+    if (!expirationDate) return false;
+    const expDate = new Date(expirationDate);
+    const today = new Date();
+    const daysUntilExpiry = Math.floor((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return daysUntilExpiry <= 30 && daysUntilExpiry >= 0;
+  };
+
+  const isExpired = (expirationDate?: any) => {
+    if (!expirationDate) return false;
+    return new Date(expirationDate) < new Date();
+  };
+
+  return (
+    <View style={s.docItemEnhanced}>
+      <View style={[s.docIconCircle, isExpired(document.expirationDate) && { backgroundColor: C.accent + "20" }]}>
+        <Ionicons 
+          name={getDocIcon(document.type) as any} 
+          size={22} 
+          color={isExpired(document.expirationDate) ? C.accent : C.good} 
+        />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.docTypeName}>{document.type.charAt(0).toUpperCase() + document.type.slice(1)}</Text>
+        {document.provider && <Text style={s.docProvider}>{document.provider}</Text>}
+        {document.policyNumber && <Text style={s.docMeta}>#{document.policyNumber}</Text>}
+        {document.expirationDate && (
+          <Text style={[
+            s.docMeta, 
+            isExpired(document.expirationDate) && { color: C.accent },
+            isExpiringSoon(document.expirationDate) && !isExpired(document.expirationDate) && { color: C.warn }
+          ]}>
+            Expires: {document.expirationDate}
+            {isExpired(document.expirationDate) && " (Expired)"}
+            {isExpiringSoon(document.expirationDate) && !isExpired(document.expirationDate) && " (Soon)"}
+          </Text>
+        )}
+        {document.amount && <Text style={s.docMeta}>${document.amount.toLocaleString()}</Text>}
+        {document.notes && <Text style={s.docNotes}>{document.notes}</Text>}
+      </View>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <TouchableOpacity onPress={onEdit} style={s.iconBtn}>
+          <Ionicons name="create-outline" size={16} color={C.text} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => onDelete(document.id)} style={s.iconBtn}>
+          <Ionicons name="trash-outline" size={16} color={C.muted} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -1258,9 +1611,10 @@ const s = StyleSheet.create({
     paddingVertical: 8,
   },
   tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
+    marginRight: -2,
   },
   tabActive: {
     backgroundColor: C.accent,
@@ -1274,13 +1628,6 @@ const s = StyleSheet.create({
     color: "#fff",
   },
 
-  heroWrap: { width: "100%", aspectRatio: 16 / 9, backgroundColor: C.dim },
-  heroImg: { width: "100%", height: "100%", resizeMode: "cover" },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.25)" },
-  heroRow: {
-    position: "absolute", left: 12, right: 12, bottom: 12,
-    flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 12,
-  },
   titleBlock: { gap: 4, maxWidth: "70%" },
   titleTxt: { color: "#fff", fontSize: 22, fontWeight: "900" },
   subtitleTxt: { color: C.muted, fontSize: 13 },
@@ -1358,18 +1705,28 @@ const s = StyleSheet.create({
   partName: { color: C.text, fontWeight: "700" },
   partMeta: { color: C.muted, fontSize: 12 },
 
-  docItem: {
+  docItemEnhanced: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    alignItems: "flex-start",
     padding: 12,
     backgroundColor: C.dim,
     borderWidth: 1,
     borderColor: C.line,
     borderRadius: 12,
+    gap: 12,
   },
-  docName: { color: C.text, fontWeight: "700" },
-  docType: { color: C.muted, fontSize: 12, textTransform: "uppercase" },
+  docIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: C.good + "20",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  docTypeName: { color: C.text, fontWeight: "800", fontSize: 15 },
+  docProvider: { color: C.text, fontSize: 13, marginTop: 2 },
+  docMeta: { color: C.muted, fontSize: 12, marginTop: 2 },
+  docNotes: { color: C.muted, fontSize: 12, marginTop: 4, fontStyle: "italic" },
 
   issueItem: {
     flexDirection: "row",
@@ -1440,6 +1797,9 @@ const s = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
   },
   modalBtnTxt: {
     color: "#fff",
@@ -1460,6 +1820,23 @@ const s = StyleSheet.create({
     borderColor: C.accent,
   },
   priorityTxt: {
+    color: C.muted,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  docTypeBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.line,
+    backgroundColor: C.dim,
+  },
+  docTypeActive: {
+    backgroundColor: C.accent,
+    borderColor: C.accent,
+  },
+  docTypeTxt: {
     color: C.muted,
     fontWeight: "700",
     fontSize: 12,

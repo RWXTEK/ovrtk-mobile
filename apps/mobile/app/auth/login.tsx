@@ -1,6 +1,10 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
+import { 
+  View, Text, TextInput, TouchableOpacity, ActivityIndicator, 
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView 
+} from "react-native";
 import { Stack, useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 
@@ -24,8 +28,9 @@ export default function Login() {
 
   const friendlyError = (codeOrMsg: string) => {
     if (codeOrMsg.includes("user-not-found")) return "No account on file for that email.";
-    if (codeOrMsg.includes("wrong-password")) return "That password doesn’t match. Give it another go.";
-    if (codeOrMsg.includes("invalid-email")) return "That email doesn’t look right.";
+    if (codeOrMsg.includes("wrong-password")) return "That password doesn't match. Give it another go.";
+    if (codeOrMsg.includes("invalid-email")) return "That email doesn't look right.";
+    if (codeOrMsg.includes("invalid-credential")) return "Email or password doesn't match. Try again.";
     if (codeOrMsg.includes("too-many-requests")) return "Too many tries. Cooldown for a minute and retry.";
     return "I biffed it. Try again in a sec.";
   };
@@ -62,7 +67,7 @@ export default function Login() {
 
     const addr = email.trim();
     if (!addr) {
-      setErr("Type your email above and I’ll send the reset link.");
+      setErr("Type your email above and I'll send the reset link.");
       return;
     }
     try {
@@ -75,81 +80,118 @@ export default function Login() {
   };
 
   return (
-    <View style={s.screen}>
+    <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-        <Text style={s.backTxt}>← Back to Garage</Text>
-      </TouchableOpacity>
+      
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, padding: 18, justifyContent: "center" }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+            <Text style={s.backTxt}>← Back to Garage</Text>
+          </TouchableOpacity>
 
-      <View style={s.card}>
-        <Text style={s.title}>Welcome back</Text>
-        <Text style={s.sub}>
-          Scotty kept the lights on. Log in and let’s wrench.
-        </Text>
+          <View style={s.card}>
+            <Text style={s.title}>Welcome back</Text>
+            <Text style={s.sub}>
+              Scotty kept the lights on. Log in and let's wrench.
+            </Text>
 
-        <View style={s.group}>
-          <Text style={s.label}>Email</Text>
-          <TextInput
-            style={s.input}
-            placeholder="you@garage.com"
-            placeholderTextColor={C.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-            returnKeyType="next"
-          />
-        </View>
+            <View style={s.group}>
+              <Text style={s.label}>Email</Text>
+              <TextInput
+                style={s.input}
+                placeholder="your@garage.com"
+                placeholderTextColor={C.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+                returnKeyType="next"
+              />
+            </View>
 
-        <View style={s.group}>
-          <Text style={s.label}>Password</Text>
-          <View style={s.passRow}>
-            <TextInput
-              style={[s.input, { flex: 1 }]}
-              placeholder="••••••••"
-              placeholderTextColor={C.muted}
-              secureTextEntry={!showPass}
-              value={pass}
-              onChangeText={setPass}
-              returnKeyType="go"
-              onSubmitEditing={onLogin}
-            />
-            <TouchableOpacity onPress={() => setShowPass(v => !v)} style={s.showBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={s.showTxt}>{showPass ? "Hide" : "Show"}</Text>
+            <View style={s.group}>
+              <Text style={s.label}>Password</Text>
+              <View style={s.passRow}>
+                <TextInput
+                  style={[s.input, { flex: 1 }]}
+                  placeholder="••••••••"
+                  placeholderTextColor={C.muted}
+                  secureTextEntry={!showPass}
+                  value={pass}
+                  onChangeText={setPass}
+                  returnKeyType="go"
+                  onSubmitEditing={onLogin}
+                />
+                <TouchableOpacity 
+                  onPress={() => setShowPass(v => !v)} 
+                  style={s.showBtn} 
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={s.showTxt}>{showPass ? "Hide" : "Show"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {err ? <Text style={s.err}>{err}</Text> : null}
+            {info ? <Text style={s.ok}>{info}</Text> : null}
+
+            <TouchableOpacity 
+              onPress={onLogin} 
+              style={[s.primary, loading && { opacity: 0.7 }]} 
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={s.primaryTxt}>Sign me in</Text>
+              )}
             </TouchableOpacity>
+
+            <View style={s.rowBetween}>
+              <TouchableOpacity onPress={() => router.replace("/auth/signup")}>
+                <Text style={s.link}>New here? Create account</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onReset}>
+                <Text style={s.link}>Forgot password?</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-
-        {err ? <Text style={s.err}>{err}</Text> : null}
-        {info ? <Text style={s.ok}>{info}</Text> : null}
-
-        <TouchableOpacity onPress={onLogin} style={[s.primary, loading && { opacity: 0.7 }]} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryTxt}>Sign me in</Text>}
-        </TouchableOpacity>
-
-        <View style={s.rowBetween}>
-          <TouchableOpacity onPress={() => router.replace("/auth/signup")}>
-            <Text style={s.link}>New here? Create account</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onReset}>
-            <Text style={s.link}>Forgot password?</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.bg, padding: 18, justifyContent: "center" },
+  safe: { flex: 1, backgroundColor: C.bg },
   backBtn: { marginBottom: 12 },
   backTxt: { color: C.accent, fontWeight: "700", fontSize: 16 },
-  card: { backgroundColor: C.panel, borderWidth: 1, borderColor: C.line, borderRadius: 16, padding: 18, gap: 12 },
+  card: { 
+    backgroundColor: C.panel, 
+    borderWidth: 1, 
+    borderColor: C.line, 
+    borderRadius: 16, 
+    padding: 18, 
+    gap: 12 
+  },
   title: { color: C.text, fontSize: 22, fontWeight: "900" },
   sub: { color: C.muted },
   group: { gap: 6 },
-  label: { color: C.muted, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.4 },
+  label: { 
+    color: C.muted, 
+    fontSize: 12, 
+    textTransform: "uppercase", 
+    letterSpacing: 0.4 
+  },
   input: {
     color: C.text,
     backgroundColor: "#11131A",
@@ -171,8 +213,18 @@ const s = StyleSheet.create({
   showTxt: { color: C.text, fontWeight: "700" },
   err: { color: "#ff6b6b", fontWeight: "700" },
   ok: { color: "#6ee7b7", fontWeight: "700" },
-  primary: { backgroundColor: C.accent, borderRadius: 12, alignItems: "center", paddingVertical: 14, marginTop: 6 },
+  primary: { 
+    backgroundColor: C.accent, 
+    borderRadius: 12, 
+    alignItems: "center", 
+    paddingVertical: 14, 
+    marginTop: 6 
+  },
   primaryTxt: { color: "#fff", fontWeight: "900" },
-  rowBetween: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
+  rowBetween: { 
+    flexDirection: "row", 
+    justifyContent: "space-between", 
+    marginTop: 8 
+  },
   link: { color: C.text, fontWeight: "700" },
 });

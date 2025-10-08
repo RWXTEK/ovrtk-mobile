@@ -52,7 +52,9 @@ const firebaseConfig = {
   storageBucket: must("EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET"),
   messagingSenderId: must("EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"),
   appId: must("EXPO_PUBLIC_FIREBASE_APP_ID"),
-  measurementId: Constants.expoConfig?.extra?.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  measurementId:
+    Constants.expoConfig?.extra?.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID ||
+    process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 /* ---------------------------- Singletons -------------------------------- */
@@ -70,20 +72,27 @@ if (!getApps().length) {
   if (Platform.OS === "web") {
     auth = getAuth(app);
   } else {
-    const NativeAsyncStorage = require("@react-native-async-storage/async-storage").default;
-
+    const NativeAsyncStorage =
+      require("@react-native-async-storage/async-storage").default;
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(NativeAsyncStorage),
     });
   }
 
-  // Debug auth state changes
+  // Debug auth state changes (helpful on device/TestFlight)
   auth.onAuthStateChanged((user) => {
-    console.log('[firebase] Auth state changed:', user ? `User: ${user.uid}` : 'logged out');
+    console.log(
+      "[firebase] Auth state changed:",
+      user ? `User: ${user.uid}` : "logged out"
+    );
   });
 
   db = getFirestore(app);
+
+  // Use default storage bucket from config
   storage = getStorage(app);
+  console.log("[firebase] Storage initialized with bucket:", firebaseConfig.storageBucket);
+
   functions = getFunctions(app, "us-central1");
 
   if (isUsingEmulators) {
@@ -94,6 +103,7 @@ if (!getApps().length) {
       });
       connectStorageEmulator(storage, EMU_HOST, 9199);
       connectFunctionsEmulator(functions, EMU_HOST, 5001);
+      console.log("[firebase] Connected to emulators at", EMU_HOST);
     } catch (e) {
       console.warn("[firebase] Emulator connect failed:", e);
     }

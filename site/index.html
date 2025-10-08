@@ -58,6 +58,7 @@
       font-weight:900;background:var(--dim);color:var(--text)
     }
     .btn.primary{background:var(--accent);color:#111;border-color:var(--accent-2)}
+    .btn:hover{transform:scale(1.02);transition:transform 0.2s}
 
     /* sections */
     .section{margin-top:var(--s7)}
@@ -72,9 +73,11 @@
     /* footer */
     .foot{
       display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;
-      border-top:1px solid var(--line);padding-top:var(--s4);margin-top:var(--s7);color:var(--muted)
+      border-top:1px solid var(--line);padding-top:var(--s4);margin-top:var(--s7);color:var(--muted);
+      font-size:14px;
     }
     .foot .a{font-weight:800}
+    .foot .a:hover{color:var(--accent)}
 
     /* responsive */
     @media (max-width:900px){
@@ -85,6 +88,8 @@
       .hero{padding:var(--s6) 0 var(--s4)}
       .section{margin-top:var(--s6)}
       .card{padding:var(--s4)}
+      .nav-links{gap:var(--s1)}
+      .link{padding:8px 12px;font-size:14px}
     }
   </style>
 </head>
@@ -94,10 +99,9 @@
     <header class="nav" role="banner">
       <div class="logo">OVRTK</div>
       <nav class="nav-links" aria-label="Top">
-        <a class="link" href="/chat.html">Scotty Web</a>
-        <a class="link" href="/support.html">Support</a>
-        <a class="link" href="/privacy.html">Privacy</a>
-        <a class="link" href="/terms.html">Terms</a>
+        <a class="link" href="support.html">Support</a>
+        <a class="link" href="privacy.html">Privacy</a>
+        <a class="link" href="terms.html">Terms</a>
       </nav>
     </header>
 
@@ -111,9 +115,8 @@
       </p>
 
       <div class="cta" role="group" aria-label="Primary actions">
-        <a class="btn primary" href="#appstore">Download iOS</a>
-        <a class="btn primary" href="#playstore">Download Android</a>
-        <a class="btn" href="/chat.html">Open Scotty Web</a>
+        <a class="btn primary" href="https://testflight.apple.com/join/YOUR_TESTFLIGHT_CODE">Download iOS</a>
+        <a class="btn primary" href="https://play.google.com/store/apps/details?id=com.rwxtek.ovrtk">Download Android</a>
       </div>
     </section>
 
@@ -123,7 +126,7 @@
       <div class="cards">
         <article class="card">
           <h3>Garage</h3>
-          <p>Log cars, parts, labor, and photos. Totals stay tidy so your wallet doesn’t get jump-scared.</p>
+          <p>Log cars, parts, labor, and photos. Totals stay tidy so your wallet doesn't get jump-scared.</p>
         </article>
         <article class="card">
           <h3>Scotty AI</h3>
@@ -145,7 +148,7 @@
           <p>RWX-TEK makes software for people who actually touch cars. OVRTK blends a clean interface with a retro soul. Scotty is the pit crew that never sleeps.</p>
         </div>
         <div class="card">
-          <h3>What’s next</h3>
+          <h3>What's next</h3>
           <p>More garage smarts, better parts tracking, and deeper Scotty knowledge tuned for real-world wrenching.</p>
         </div>
       </div>
@@ -157,7 +160,7 @@
       <span>•</span>
       <a class="a" href="/terms.html">Terms</a>
       <span>•</span>
-      <span>© <script>document.write(new Date().getFullYear())</script> OVRTK</span>
+      <span>© <script>document.write(new Date().getFullYear())</script> RWX-TEK INC.</span>
     </footer>
   </div>
 </body>
