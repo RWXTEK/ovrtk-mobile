@@ -8,16 +8,28 @@ export default {
     icon: "./assets/images/OVRTKICONIC.png",
     jsEngine: "hermes",
     newArchEnabled: false,
+    splash: {
+      image: "./assets/images/SPLASH.png",
+      resizeMode: "contain",
+      backgroundColor: "#0C0D11"
+    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.rwxtek.ovrtk",
       usesAppleSignIn: true,
       associatedDomains: ["applinks:ovrtk.com"],
+      splash: {
+        image: "./assets/images/SPLASH.png",
+        resizeMode: "contain",
+        backgroundColor: "#0C0D11",
+        tabletImage: "./assets/images/SPLASH.png"
+      },
       infoPlist: {
         NSPhotoLibraryUsageDescription: "OVRTK needs access to your photos so you can upload images to Scotty.",
         NSPhotoLibraryAddUsageDescription: "OVRTK saves generated or edited images to your library when you choose to.",
         NSCameraUsageDescription: "OVRTK uses the camera so you can snap pics for Scotty to analyze.",
-        ITSAppUsesNonExemptEncryption: false
+        ITSAppUsesNonExemptEncryption: false,
+        UILaunchStoryboardName: "SplashScreen"
       }
     },
     android: {
