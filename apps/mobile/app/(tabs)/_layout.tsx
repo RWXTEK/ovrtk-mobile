@@ -31,7 +31,7 @@ export default function TabsLayout() {
           height: 78,          // slightly taller, more tappable
           paddingHorizontal: 12,
           borderRadius: 1,    // fixed pill look
-          backgroundColor: C.glass,
+          backgroundColor: C.bg,
           borderTopWidth: 0,
           borderWidth: -12,
           borderColor: C.line,
@@ -55,6 +55,21 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? "car-sport" : "car-sport-outline"}
+              size={size}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      {/* Community Tab */}
+      <Tabs.Screen
+        name="community"
+        options={{
+          title: "Community",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "people" : "people-outline"}
               size={size}
               color={color}
             />
@@ -92,7 +107,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 🚫 Hide everything else so it doesn’t show up as tabs */}
+      {/* 🚫 Hide everything else so it doesn't show up as tabs */}
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="car" options={{ href: null }} />
     </Tabs>

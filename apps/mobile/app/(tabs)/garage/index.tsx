@@ -13,6 +13,9 @@ import {
   Easing,
   Pressable,
   ScrollView,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -22,10 +25,12 @@ import {
 import { auth, db, storage } from "../../../lib/firebase";
 import { ref, deleteObject } from "firebase/storage";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { checkAndScheduleNotifications } from '../../../utils/notifications';
 import { Ionicons } from "@expo/vector-icons";
+import VehicleTypePicker, { VehicleType } from '../../../components/VehicleTypePicker';
 
 let Haptics: any = null;
-try { Haptics = require("expo-haptics"); } catch {}
+try { Haptics = require("expo-haptics"); } catch { }
 
 type Car = {
   id: string;
@@ -33,11 +38,43 @@ type Car = {
   model: string;
   year?: number;
   trim?: string;
+  nickname?: string;
   photoURL?: string;
   pinned?: boolean;
   createdAt?: any;
   purchasePrice?: number;
   currentValue?: number;
+  currentMileage?: number;
+  vehicleType?: VehicleType;
+  // Service intervals
+  oilChangeInterval?: number;
+  tireRotationInterval?: number;
+  airFilterInterval?: number;
+  cabinFilterInterval?: number;
+  coolantFlushInterval?: number;
+  sparkPlugInterval?: number;
+  brakeInspectionInterval?: number;
+  brakeFluidInterval?: number;
+  transmissionServiceInterval?: number;
+  differentialServiceInterval?: number;
+  // Last service mileage
+  lastOilChangeMileage?: number;
+  lastTireRotationMileage?: number;
+  lastAirFilterMileage?: number;
+  lastCabinFilterMileage?: number;
+  lastCoolantFlushMileage?: number;
+  lastSparkPlugMileage?: number;
+  lastBrakeInspectionMileage?: number;
+  lastBrakeFluidMileage?: number;
+  lastTransmissionServiceMileage?: number;
+  lastDifferentialServiceMileage?: number;
+};
+type MaintenanceAlert = {
+  carId: string;
+  carName: string;
+  serviceName: string;
+  status: "overdue" | "due_soon";
+  milesOverdue: number;
 };
 
 const C = {
@@ -49,6 +86,7 @@ const C = {
   accent: "#E11D48",
   dim: "#0f1218",
   good: "#22c55e",
+  warn: "#f59e0b",
 };
 
 type SortOption = "recent" | "year" | "make" | "value" | "pinned";
@@ -63,6 +101,12 @@ export default function Garage() {
   const [sortBy, setSortBy] = useState<SortOption>("pinned");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [showSortModal, setShowSortModal] = useState(false);
+  const [showMileageModal, setShowMileageModal] = useState(false);
+  const [selectedCarForMileage, setSelectedCarForMileage] = useState<Car | null>(null);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+  const [alertsExpanded, setAlertsExpanded] = useState(false);
+  const [dismissingAlert, setDismissingAlert] = useState<string | null>(null);
+  const [vehiclePickerOpen, setVehiclePickerOpen] = useState(false);
 
   useEffect(() => onAuthStateChanged(auth, setMe), []);
 
@@ -75,6 +119,138 @@ export default function Garage() {
     });
     return unsub;
   }, [me]);
+
+  // Handle vehicle type selection
+  const handleVehicleTypeSelect = (type: VehicleType) => {
+    console.log('Selected vehicle type:', type);
+    // Navigate to edit screen with vehicle type
+    router.push({
+      pathname: "/cardtab/edit",
+      params: { vehicleType: type }
+    });
+  };
+
+  // Calculate maintenance alerts
+  const maintenanceAlerts = useMemo(() => {
+    const alerts: MaintenanceAlert[] = [];
+
+    cars.forEach(car => {
+      if (!car.currentMileage) return;
+
+      const carName = `${car.year || ''} ${car.make} ${car.model}`.trim();
+
+      const services = [
+        {
+          name: 'Oil Change',
+          interval: car.oilChangeInterval,
+          lastMileage: car.lastOilChangeMileage || 0,
+          dueSoonThreshold: 500,
+        },
+        {
+          name: 'Tire Rotation',
+          interval: car.tireRotationInterval,
+          lastMileage: car.lastTireRotationMileage || 0,
+          dueSoonThreshold: 500,
+        },
+        {
+          name: 'Air Filter',
+          interval: car.airFilterInterval,
+          lastMileage: car.lastAirFilterMileage || 0,
+          dueSoonThreshold: 1000,
+        },
+        {
+          name: 'Cabin Filter',
+          interval: (car as any).cabinFilterInterval,
+          lastMileage: (car as any).lastCabinFilterMileage || 0,
+          dueSoonThreshold: 1000,
+        },
+        {
+          name: 'Coolant Flush',
+          interval: (car as any).coolantFlushInterval,
+          lastMileage: (car as any).lastCoolantFlushMileage || 0,
+          dueSoonThreshold: 2000,
+        },
+        {
+          name: 'Spark Plugs',
+          interval: (car as any).sparkPlugInterval,
+          lastMileage: (car as any).lastSparkPlugMileage || 0,
+          dueSoonThreshold: 5000,
+        },
+        {
+          name: 'Brake Inspection',
+          interval: (car as any).brakeInspectionInterval,
+          lastMileage: (car as any).lastBrakeInspectionMileage || 0,
+          dueSoonThreshold: 1000,
+        },
+        {
+          name: 'Brake Fluid',
+          interval: (car as any).brakeFluidInterval,
+          lastMileage: (car as any).lastBrakeFluidMileage || 0,
+          dueSoonThreshold: 2000,
+        },
+        {
+          name: 'Transmission Service',
+          interval: (car as any).transmissionServiceInterval,
+          lastMileage: (car as any).lastTransmissionServiceMileage || 0,
+          dueSoonThreshold: 5000,
+        },
+        {
+          name: 'Differential Service',
+          interval: (car as any).differentialServiceInterval,
+          lastMileage: (car as any).lastDifferentialServiceMileage || 0,
+          dueSoonThreshold: 5000,
+        },
+      ];
+
+      services.forEach(service => {
+        if (!service.interval) return;
+        if (service.lastMileage === 0) return;
+
+        const nextDue = service.lastMileage + service.interval;
+        const remaining = nextDue - car.currentMileage!;
+
+        const alertId = `${car.id}-${service.name}`;
+        if (dismissedAlerts.has(alertId)) return;
+
+        if (remaining < 0) {
+          alerts.push({
+            carId: car.id,
+            carName,
+            serviceName: service.name,
+            status: "overdue",
+            milesOverdue: Math.abs(remaining),
+          });
+        }
+        else if (remaining <= service.dueSoonThreshold) {
+          alerts.push({
+            carId: car.id,
+            carName,
+            serviceName: service.name,
+            status: "due_soon",
+            milesOverdue: remaining,
+          });
+        }
+      });
+    });
+
+    return alerts.sort((a, b) => {
+      if (a.status === "overdue" && b.status !== "overdue") return -1;
+      if (a.status !== "overdue" && b.status === "overdue") return 1;
+      return a.status === "overdue"
+        ? b.milesOverdue - a.milesOverdue
+        : a.milesOverdue - b.milesOverdue;
+    });
+  }, [cars, dismissedAlerts]);
+
+  const dismissAlert = (carId: string, serviceName: string) => {
+    const alertId = `${carId}-${serviceName}`;
+    setDismissingAlert(alertId);
+
+    setTimeout(() => {
+      setDismissedAlerts(prev => new Set([...prev, alertId]));
+      setDismissingAlert(null);
+    }, 300);
+  };
 
   const sortedCars = useMemo(() => {
     const sorted = [...cars];
@@ -100,23 +276,14 @@ export default function Garage() {
   const stats = useMemo(() => {
     const totalValue = cars.reduce((sum, c) => sum + (c.currentValue || 0), 0);
     const totalInvested = cars.reduce((sum, c) => sum + (c.purchasePrice || 0), 0);
-    const mostValuable = cars.reduce((max, c) => 
+    const mostValuable = cars.reduce((max, c) =>
       (c.currentValue || 0) > (max.currentValue || 0) ? c : max
-    , cars[0]);
+      , cars[0]);
     const uniqueMakes = new Set(cars.map(c => c.make)).size;
     const oldestYear = Math.min(...cars.map(c => c.year || 9999));
-    
+
     return { totalValue, totalInvested, mostValuable, uniqueMakes, oldestYear };
   }, [cars]);
-
-  const milestones = useMemo(() => {
-    const badges = [];
-    if (cars.length >= 1) badges.push({ icon: "trophy", label: "First Build", color: C.accent });
-    if (cars.length >= 5) badges.push({ icon: "ribbon", label: "Dream Garage", color: "#f59e0b" });
-    if (cars.length >= 10) badges.push({ icon: "medal", label: "Collector", color: "#8b5cf6" });
-    if (stats.uniqueMakes >= 3) badges.push({ icon: "albums", label: "Diverse Fleet", color: "#06b6d4" });
-    return badges;
-  }, [cars.length, stats.uniqueMakes]);
 
   const countText = useMemo(() => `${cars.length} ${cars.length === 1 ? "car" : "cars"}`, [cars.length]);
 
@@ -136,7 +303,7 @@ export default function Garage() {
       try {
         if (car.photoURL) {
           const rs = ref(storage, `users/${me.uid}/cars/${car.id}.jpg`);
-          await deleteObject(rs).catch(() => {});
+          await deleteObject(rs).catch(() => { });
         }
         await deleteDoc(doc(db, "garages", me.uid, "cars", car.id));
       } catch (e) {
@@ -149,6 +316,30 @@ export default function Garage() {
     ]);
   }, [me]);
 
+  const updateCarMileage = useCallback(async (carId: string, newMileage: number) => {
+    if (!me) return;
+
+    try {
+      await updateDoc(doc(db, "garages", me.uid, "cars", carId), {
+        currentMileage: newMileage,
+      });
+
+      const updatedCar = cars.find(c => c.id === carId);
+      if (updatedCar && me) {
+        await checkAndScheduleNotifications({
+          ...updatedCar,
+          currentMileage: newMileage
+        }, me.uid);
+      }
+
+      Alert.alert("Success", "Mileage updated successfully!");
+      setShowMileageModal(false);
+      setSelectedCarForMileage(null);
+    } catch (error) {
+      Alert.alert("Error", "Failed to update mileage");
+    }
+  }, [me, cars]);
+
   const openSheet = (car: Car) => {
     Haptics?.impactAsync?.(Haptics.ImpactFeedbackStyle.Light);
     setSheetCar(car);
@@ -159,18 +350,21 @@ export default function Garage() {
     <View style={s.emptyState}>
       <Ionicons name="car-sport-outline" size={64} color={C.muted} />
       <Text style={s.emptyTitle}>Start Your Collection</Text>
-      <Text style={s.emptyDesc}>Add your first car to track builds, mods, and value</Text>
-      
+      <Text style={s.emptyDesc}>Add your first vehicle to track builds, mods, and value</Text>
+
       <View style={s.tipsCard}>
         <Text style={s.tipsTitle}>Pro Tips:</Text>
-        <Text style={s.tipItem}>📸 Add photos to showcase your ride</Text>
-        <Text style={s.tipItem}>🔧 Track mods and performance gains</Text>
-        <Text style={s.tipItem}>💰 Monitor your garage's value</Text>
+        <Text style={s.tipItem}>Add photos to showcase your ride</Text>
+        <Text style={s.tipItem}>Track mods and performance gains</Text>
+        <Text style={s.tipItem}>Monitor your garage's value</Text>
       </View>
 
-      <TouchableOpacity onPress={() => router.push("/cardtab/edit")} style={s.emptyBtn}>
+      <TouchableOpacity 
+        onPress={() => setVehiclePickerOpen(true)} 
+        style={s.emptyBtn}
+      >
         <Ionicons name="add-circle" size={20} color="#fff" />
-        <Text style={s.emptyBtnTxt}>Add Your First Car</Text>
+        <Text style={s.emptyBtnTxt}>Add Your First Vehicle</Text>
       </TouchableOpacity>
     </View>
   );
@@ -190,9 +384,15 @@ export default function Garage() {
             <Ionicons name="albums-outline" size={12} color={C.muted} />
             <Text style={s.count}>{countText}</Text>
           </View>
+          {maintenanceAlerts.length > 0 && (
+            <View style={s.alertBadge}>
+              <Ionicons name="warning" size={7} color="#111" />
+              <Text style={s.alertBadgeText}>{maintenanceAlerts.length}</Text>
+            </View>
+          )}
         </View>
 
-        <View style={{ flexDirection: "row", gap: 8 }}>
+        <View style={{ flexDirection: "row", gap: 4 }}>
           <TouchableOpacity
             onPress={() => setViewMode(viewMode === "list" ? "grid" : "list")}
             style={s.iconBtn}
@@ -208,7 +408,7 @@ export default function Garage() {
             <Ionicons name="swap-vertical" size={20} color={C.text} />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => router.push("/cardtab/edit")}
+            onPress={() => setVehiclePickerOpen(true)}
             style={s.addBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -235,7 +435,20 @@ export default function Garage() {
           ListHeaderComponent={
             cars.length > 0 ? (
               <>
-                {/* Stats Dashboard */}
+                {maintenanceAlerts.length > 0 && (
+                  <CompactMaintenanceAlert
+                    alerts={maintenanceAlerts}
+                    expanded={alertsExpanded}
+                    onToggle={() => setAlertsExpanded(!alertsExpanded)}
+                    onNavigate={(carId) => router.push({
+                      pathname: "/car/[id]",
+                      params: { id: carId, tab: 'maintenance' }
+                    })} 
+                    onDismiss={dismissAlert}
+                    dismissingAlert={dismissingAlert}
+                  />
+                )}
+
                 <View style={s.statsCard}>
                   <Text style={s.statsTitle}>Garage Overview</Text>
                   <View style={s.statsGrid}>
@@ -247,7 +460,7 @@ export default function Garage() {
                     <View style={s.statBox}>
                       <Ionicons name="trending-up-outline" size={18} color={C.accent} />
                       <Text style={s.statValue}>
-                        {stats.totalValue > 0 && stats.totalInvested > 0 
+                        {stats.totalValue > 0 && stats.totalInvested > 0
                           ? `${((stats.totalValue - stats.totalInvested) / stats.totalInvested * 100).toFixed(1)}%`
                           : "—"}
                       </Text>
@@ -266,20 +479,50 @@ export default function Garage() {
                   </View>
                 </View>
 
-                {/* Milestones */}
-                {milestones.length > 0 && (
-                  <View style={s.milestonesCard}>
-                    <Text style={s.milestonesTitle}>Achievements</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                      {milestones.map((m, i) => (
-                        <View key={i} style={s.milestone}>
-                          <Ionicons name={m.icon as any} size={16} color={m.color} />
-                          <Text style={s.milestoneLabel}>{m.label}</Text>
-                        </View>
-                      ))}
-                    </ScrollView>
+                <View style={s.quickUpdateCard}>
+                  <View style={s.quickUpdateHeader}>
+                    <Ionicons name="speedometer" size={20} color={C.accent} />
+                    <Text style={s.quickUpdateTitle}>Quick Mileage Update</Text>
                   </View>
-                )}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                    {cars.map((car) => (
+                      <TouchableOpacity
+                        key={car.id}
+                        onPress={() => {
+                          setSelectedCarForMileage(car);
+                          setShowMileageModal(true);
+                        }}
+                        style={s.quickUpdateCarCard}
+                        activeOpacity={0.8}
+                      >
+                        <View style={s.quickUpdateCarHeader}>
+                          {car.photoURL ? (
+                            <Image source={{ uri: car.photoURL }} style={s.quickUpdateThumb} />
+                          ) : (
+                            <View style={[s.quickUpdateThumb, s.thumbEmpty]}>
+                              <Ionicons name="car-sport" size={18} color={C.muted} />
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.quickUpdateCarName} numberOfLines={1}>
+                              {car.year ? `${car.year} ` : ""}{car.make}
+                            </Text>
+                            <Text style={s.quickUpdateCarModel} numberOfLines={1}>
+                              {car.model}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={s.quickUpdateMileageRow}>
+                          <Ionicons name="speedometer-outline" size={14} color={C.muted} />
+                          <Text style={s.quickUpdateMileage}>
+                            {car.currentMileage ? `${car.currentMileage.toLocaleString()} mi` : "Set mileage"}
+                          </Text>
+                          <Ionicons name="chevron-forward" size={14} color={C.accent} />
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
               </>
             ) : null
           }
@@ -302,6 +545,12 @@ export default function Garage() {
                   <Text style={s.carTitle}>
                     {item.year ? `${item.year} ` : ""}{item.make} {item.model}
                   </Text>
+                  {item.nickname && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+                      <Ionicons name="pricetag" size={12} color={C.accent} />
+                      <Text style={s.nickname}>"{item.nickname}"</Text>
+                    </View>
+                  )}
                   {item.trim ? <Text style={s.trim}>{item.trim}</Text> : null}
                   {item.currentValue ? (
                     <Text style={s.carValue}>${item.currentValue.toLocaleString()}</Text>
@@ -333,6 +582,9 @@ export default function Garage() {
                     {item.year ? `${item.year} ` : ""}{item.make}
                   </Text>
                   <Text style={s.gridModel} numberOfLines={1}>{item.model}</Text>
+                  {item.nickname && (
+                    <Text style={s.gridNickname} numberOfLines={1}>"{item.nickname}"</Text>
+                  )}
                 </View>
               </TouchableOpacity>
             )
@@ -341,7 +593,6 @@ export default function Garage() {
         />
       )}
 
-      {/* Sort Modal */}
       <Modal visible={showSortModal} transparent animationType="fade">
         <Pressable style={s.modalOverlay} onPress={() => setShowSortModal(false)}>
           <View style={s.sortModal}>
@@ -369,7 +620,6 @@ export default function Garage() {
         </Pressable>
       </Modal>
 
-      {/* Bottom Sheet */}
       <ActionSheet
         open={!!sheetCar}
         onClose={closeSheet}
@@ -398,11 +648,277 @@ export default function Garage() {
           },
         ]}
       />
+
+      <MileageUpdateModal
+        visible={showMileageModal}
+        onClose={() => {
+          setShowMileageModal(false);
+          setSelectedCarForMileage(null);
+        }}
+        car={selectedCarForMileage}
+        onSave={(newMileage) => {
+          if (selectedCarForMileage) {
+            updateCarMileage(selectedCarForMileage.id, newMileage);
+          }
+        }}
+      />
+
+      <VehicleTypePicker
+        visible={vehiclePickerOpen}
+        onClose={() => setVehiclePickerOpen(false)}
+        onSelect={handleVehicleTypeSelect}
+      />
     </SafeAreaView>
   );
 }
 
-/* Bottom Sheet */
+function CompactMaintenanceAlert({
+  alerts,
+  expanded,
+  onToggle,
+  onNavigate,
+  onDismiss,
+  dismissingAlert,
+}: {
+  alerts: MaintenanceAlert[];
+  expanded: boolean;
+  onToggle: () => void;
+  onNavigate: (carId: string) => void;
+  onDismiss: (carId: string, serviceName: string) => void;
+  dismissingAlert: string | null;
+}) {
+  const heightAnim = useRef(new Animated.Value(0)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const alertAnims = useRef<{ [key: string]: Animated.Value }>({}).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(heightAnim, {
+        toValue: expanded ? 1 : 0,
+        tension: 100,
+        friction: 12,
+        useNativeDriver: false,
+      }),
+      Animated.timing(rotateAnim, {
+        toValue: expanded ? 1 : 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [expanded]);
+
+  useEffect(() => {
+    if (dismissingAlert) {
+      if (!alertAnims[dismissingAlert]) {
+        alertAnims[dismissingAlert] = new Animated.Value(1);
+      }
+
+      Animated.parallel([
+        Animated.timing(alertAnims[dismissingAlert], {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [dismissingAlert]);
+
+  const overdueCount = alerts.filter(a => a.status === "overdue").length;
+  const dueSoonCount = alerts.filter(a => a.status === "due_soon").length;
+
+  const rotate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+
+  const mostUrgent = alerts[0];
+
+  return (
+    <View style={s.compactAlertContainer}>
+      <TouchableOpacity
+        onPress={onToggle}
+        style={s.compactAlertHeader}
+        activeOpacity={0.7}
+      >
+        <View style={s.compactAlertIcon}>
+          <Ionicons
+            name={overdueCount > 0 ? "warning" : "time"}
+            size={22}
+            color={overdueCount > 0 ? C.accent : C.warn}
+          />
+        </View>
+
+        <View style={s.compactAlertTextContainer}>
+          <Text style={s.compactAlertTitle}>
+            {overdueCount > 0
+              ? `${overdueCount} Overdue Service${overdueCount > 1 ? 's' : ''}`
+              : `${dueSoonCount} Service${dueSoonCount > 1 ? 's' : ''} Due Soon`
+            }
+          </Text>
+          <Text style={s.compactAlertSubtitle}>
+            {mostUrgent.carName} • {mostUrgent.serviceName}
+          </Text>
+        </View>
+
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <Ionicons name="chevron-down" size={20} color={C.muted} />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={s.expandedAlerts}>
+          {alerts.map((alert, idx) => {
+            const isOverdue = alert.status === "overdue";
+            const statusColor = isOverdue ? C.accent : C.warn;
+            const alertId = `${alert.carId}-${alert.serviceName}`;
+
+            if (!alertAnims[alertId]) {
+              alertAnims[alertId] = new Animated.Value(1);
+            }
+
+            const isDismissing = dismissingAlert === alertId;
+
+            return (
+              <Animated.View
+                key={`${alert.carId}-${alert.serviceName}-${idx}`}
+                style={{
+                  opacity: alertAnims[alertId],
+                  transform: [
+                    {
+                      translateX: alertAnims[alertId].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [100, 0],
+                      }),
+                    },
+                    {
+                      scale: alertAnims[alertId].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.8, 1],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <TouchableOpacity
+                  onPress={() => !isDismissing && onNavigate(alert.carId)}
+                  style={s.miniAlertRow}
+                  activeOpacity={0.7}
+                  disabled={isDismissing}
+                >
+                  <View style={[s.miniAlertDot, { backgroundColor: statusColor }]} />
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.miniAlertCar}>{alert.carName}</Text>
+                    <Text style={s.miniAlertService}>
+                      {alert.serviceName} •
+                      <Text style={[{ color: statusColor, fontWeight: "800" }]}>
+                        {isOverdue
+                          ? ` ${alert.milesOverdue.toLocaleString()} mi overdue`
+                          : ` ${alert.milesOverdue.toLocaleString()} mi left`
+                        }
+                      </Text>
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => onDismiss(alert.carId, alert.serviceName)}
+                    style={s.miniDismissBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    disabled={isDismissing}
+                  >
+                    <Ionicons name="close" size={16} color={C.muted} />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function MileageUpdateModal({
+  visible,
+  onClose,
+  car,
+  onSave,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  car: Car | null;
+  onSave: (mileage: number) => void;
+}) {
+  const [mileage, setMileage] = useState("");
+
+  useEffect(() => {
+    if (visible && car) {
+      setMileage(car.currentMileage?.toString() || "");
+    }
+  }, [visible, car]);
+
+  const handleSave = () => {
+    const miles = parseInt(mileage);
+    if (!mileage || isNaN(miles) || miles < 0) {
+      Alert.alert("Invalid Mileage", "Please enter a valid mileage.");
+      return;
+    }
+    onSave(miles);
+    setMileage("");
+  };
+
+  if (!car) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <Pressable style={s.modalOverlay} onPress={onClose}>
+          <Pressable style={s.mileageModalCard} onPress={(e) => e.stopPropagation()}>
+            <View style={s.mileageModalHeader}>
+              <Ionicons name="speedometer" size={28} color={C.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.mileageModalTitle}>Update Mileage</Text>
+                <Text style={s.mileageModalSubtitle}>
+                  {car.year ? `${car.year} ` : ""}{car.make} {car.model}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={s.mileageModalClose}>
+                <Ionicons name="close" size={24} color={C.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.mileageInputContainer}>
+              <Text style={s.mileageLabel}>Current Odometer Reading</Text>
+              <TextInput
+                style={s.mileageInput}
+                placeholder="Enter mileage"
+                placeholderTextColor="#666"
+                value={mileage}
+                onChangeText={setMileage}
+                keyboardType="number-pad"
+                autoFocus
+                selectionColor={C.accent}
+              />
+              <Text style={s.mileageHint}>
+                Last recorded: {car.currentMileage?.toLocaleString() || "Not set"} mi
+              </Text>
+            </View>
+
+            <TouchableOpacity onPress={handleSave} style={s.mileageModalBtn} activeOpacity={0.9}>
+              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Text style={s.mileageModalBtnTxt}>Update Mileage</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 function ActionSheet({
   open,
   onClose,
@@ -470,7 +986,6 @@ function ActionSheet({
   );
 }
 
-/* Styles */
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   header: {
@@ -489,6 +1004,11 @@ const s = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
   },
   count: { color: C.muted, fontSize: 12 },
+  alertBadge: {
+    flexDirection: "row", gap: 4, alignItems: "center",
+    backgroundColor: C.warn, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999,
+  },
+  alertBadgeText: { color: "#111", fontWeight: "900", fontSize: 10 },
   iconBtn: {
     backgroundColor: C.dim, borderWidth: 1, borderColor: C.line,
     width: 36, height: 36, borderRadius: 18,
@@ -499,6 +1019,161 @@ const s = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+
+  compactAlertContainer: {
+    backgroundColor: C.panel,
+    borderWidth: 2,
+    borderColor: C.accent,
+    borderRadius: 16,
+    marginBottom: 12,
+    overflow: "hidden",
+    shadowColor: C.accent,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  compactAlertHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    gap: 12,
+  },
+
+  quickUpdateCard: {
+    backgroundColor: C.panel,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  quickUpdateHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  quickUpdateTitle: {
+    color: C.text,
+    fontWeight: "900",
+    fontSize: 16,
+  },
+  quickUpdateCarCard: {
+    backgroundColor: C.dim,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 12,
+    padding: 10,
+    width: 160,
+    gap: 10,
+  },
+  quickUpdateCarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  quickUpdateThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: C.bg,
+  },
+  quickUpdateCarName: {
+    color: C.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  quickUpdateCarModel: {
+    color: C.muted,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  quickUpdateMileageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: C.line,
+  },
+  quickUpdateMileage: {
+    flex: 1,
+    color: C.text,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  nickname: {
+    color: C.accent,
+    fontSize: 12,
+    fontWeight: "700",
+    fontStyle: "italic"
+  },
+  gridNickname: {
+    color: C.accent,
+    fontSize: 11,
+    fontWeight: "700",
+    fontStyle: "italic",
+    marginTop: 2,
+  },
+
+  compactAlertIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: C.accent + "15",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  compactAlertTextContainer: {
+    flex: 1,
+  },
+  compactAlertTitle: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  compactAlertSubtitle: {
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  expandedAlerts: {
+    borderTopWidth: 1,
+    borderTopColor: C.line,
+    paddingVertical: 8,
+  },
+  miniAlertRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+  miniAlertDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  miniAlertCar: {
+    color: C.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  miniAlertService: {
+    color: C.muted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  miniDismissBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: C.dim,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   statsCard: {
@@ -513,18 +1188,6 @@ const s = StyleSheet.create({
   },
   statValue: { color: C.text, fontWeight: "900", fontSize: 12 },
   statLabel: { color: C.muted, fontSize: 10, textTransform: "uppercase" },
-
-  milestonesCard: {
-    backgroundColor: C.panel, borderWidth: 1, borderColor: C.line,
-    borderRadius: 16, padding: 16, marginBottom: 12,
-  },
-  milestonesTitle: { color: C.text, fontWeight: "900", fontSize: 14, marginBottom: 10 },
-  milestone: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: C.dim, borderWidth: 1, borderColor: C.line,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
-  },
-  milestoneLabel: { color: C.text, fontWeight: "700", fontSize: 12 },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   primary: { backgroundColor: C.accent, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
@@ -609,4 +1272,75 @@ const s = StyleSheet.create({
   },
   sheetTxt: { color: C.text, fontWeight: "800" },
   sheetCancel: { marginTop: 4, backgroundColor: C.dim },
+
+  mileageModalCard: {
+    backgroundColor: C.panel,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 24,
+    padding: 24,
+    margin: 16,
+    width: "90%",
+    maxWidth: 400,
+    alignSelf: "center",
+  },
+  mileageModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 24,
+  },
+  mileageModalTitle: {
+    color: C.text,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  mileageModalSubtitle: {
+    color: C.muted,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  mileageModalClose: {
+    padding: 4,
+  },
+  mileageInputContainer: {
+    marginBottom: 20,
+  },
+  mileageLabel: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  mileageInput: {
+    backgroundColor: "#1a1b20",
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 12,
+    padding: 16,
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  mileageHint: {
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  mileageModalBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  mileageModalBtnTxt: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 16,
+  },
 });

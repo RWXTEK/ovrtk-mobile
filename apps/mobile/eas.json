@@ -1,5 +1,5 @@
 {
-  "cli": { "version": ">= 16.19.3", "appVersionSource": "remote" },
+  "cli": { "version": ">= 16.19.3" },
   "build": {
     "base": {
       "node": "20.18.0",
@@ -13,6 +13,9 @@
     "preview": {
       "extends": "base",
       "distribution": "internal",
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyABFOpI8ZC0bgQU46Qm5KowEMtYdnd3SY0",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "ovrtk-117f6.firebaseapp.com",
@@ -25,6 +28,7 @@
         "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "38789263703-h9o81rs9f52nolrd06mr7qkqo6v2jskj.apps.googleusercontent.com",
         "OPENAI_API_KEY": "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",
         "EXPO_PUBLIC_RC_IOS_KEY": "appl_kbIDSqefYIxgekZLUxtdjMMJiEx",
+        "EXPO_PUBLIC_RC_ANDROID_KEY": "goog_cDYCRHTaMuQZsDaHIlBOHiGqtZi",
         "EXPO_PUBLIC_RC_ENTITLEMENT_ID": "OVRTK Plus"
       },
       "ios": { "cocoapods": "1.16.2", "resourceClass": "m-medium", "image": "latest" }
@@ -43,9 +47,10 @@
         "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "38789263703-h9o81rs9f52nolrd06mr7qkqo6v2jskj.apps.googleusercontent.com",
         "OPENAI_API_KEY": "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",
         "EXPO_PUBLIC_RC_IOS_KEY": "appl_kbIDSqefYIxgekZLUxtdjMMJiEx",
+        "EXPO_PUBLIC_RC_ANDROID_KEY": "goog_cDYCRHTaMuQZsDaHIlBOHiGqtZi",
         "EXPO_PUBLIC_RC_ENTITLEMENT_ID": "OVRTK Plus"
       },
-      "ios": { "cocoapods": "1.16.2", "autoIncrement": true, "resourceClass": "m-medium", "image": "latest" },
+      "ios": { "cocoapods": "1.16.2", "resourceClass": "m-medium", "image": "latest" },
       "android": {}
     }
   },

@@ -3,11 +3,15 @@ export default {
     name: "OVRTK",
     slug: "ovrtk",
     scheme: "ovrtk",
-    version: "1.0.0",
+    version: "1.1.14",
     orientation: "portrait",
     icon: "./assets/images/OVRTKICONIC.png",
     jsEngine: "hermes",
     newArchEnabled: false,
+    updates: {
+      url: "https://u.expo.dev/b51c33c1-2276-4d1a-916f-aafe0c888374"
+    },
+    runtimeVersion: "1.1.14",
     splash: {
       image: "./assets/images/SPLASH.png",
       resizeMode: "contain",
@@ -16,6 +20,8 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.rwxtek.ovrtk",
+      buildNumber: "16",
+      deploymentTarget: "17.0",
       usesAppleSignIn: true,
       associatedDomains: ["applinks:ovrtk.com"],
       splash: {
@@ -28,13 +34,16 @@ export default {
         NSPhotoLibraryUsageDescription: "OVRTK needs access to your photos so you can upload images to Scotty.",
         NSPhotoLibraryAddUsageDescription: "OVRTK saves generated or edited images to your library when you choose to.",
         NSCameraUsageDescription: "OVRTK uses the camera so you can snap pics for Scotty to analyze.",
+        NSUserNotificationsUsageDescription: "OVRTK sends you optional notifications for build reminders, Scotty AI responses, and daily check-ins to help you stay connected with your garage.",
+        NSLocationWhenInUseUsageDescription: "OVRTK uses your location to help you find nearby car meets and events.",  // 🔥 ADD THIS LINE
+        UIBackgroundModes: ["remote-notification"],
         ITSAppUsesNonExemptEncryption: false,
         UILaunchStoryboardName: "SplashScreen"
       }
     },
     android: {
       package: "com.rwxtek.ovrtk",
-      versionCode: 2,
+      versionCode: 13,
       screenOrientation: "portrait",
       adaptiveIcon: {
         foregroundImage: "./assets/images/OVRTKICONIC.png",
@@ -45,7 +54,8 @@ export default {
       permissions: [
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VISUAL_USER_SELECTED",
-        "CAMERA"
+        "CAMERA",
+        "POST_NOTIFICATIONS"
       ],
       intentFilters: [
         {
@@ -79,6 +89,14 @@ export default {
           dark: { backgroundColor: "#0C0D11" }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/images/OVRTKICONIC.png",
+          color: "#E11D48",
+          sounds: []
+        }
+      ],
       "expo-web-browser",
       "expo-apple-authentication"
     ],
@@ -86,6 +104,7 @@ export default {
     extra: {
       router: {},
       eas: { projectId: "b51c33c1-2276-4d1a-916f-aafe0c888374" },
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
       EXPO_PUBLIC_FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
       EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
       EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
@@ -94,8 +113,8 @@ export default {
       EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
       EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
       EXPO_PUBLIC_RC_IOS_KEY: process.env.EXPO_PUBLIC_RC_IOS_KEY || "appl_kbIDSqefYIxgekZLUxtdjMMJiEx",
-      EXPO_PUBLIC_RC_ANDROID_KEY: process.env.EXPO_PUBLIC_RC_ANDROID_KEY || "",
-      EXPO_PUBLIC_RC_ENTITLEMENT_ID: process.env.EXPO_PUBLIC_RC_ENTITLEMENT_ID || "pro_uploads",
+      EXPO_PUBLIC_RC_ANDROID_KEY: process.env.EXPO_PUBLIC_RC_ANDROID_KEY || "goog_cDYCRHTaMuQZsDaHIlBOHiGqtZi",
+      EXPO_PUBLIC_RC_ENTITLEMENT_ID: process.env.EXPO_PUBLIC_RC_ENTITLEMENT_ID || "OVRTK Plus",
     },
     owner: "rwxtek"
   }

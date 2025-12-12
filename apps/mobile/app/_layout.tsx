@@ -1,147 +1,210 @@
 // app/_layout.tsx
 
-// Ensure gesture-handler is initialized before any navigation code
 import "react-native-gesture-handler";
 
-import { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { useEffect, useState } from "react";
+import { Platform, ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 
 import Purchases, { LOG_LEVEL, type CustomerInfo } from "react-native-purchases";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
+import { handleNotificationResponse } from "../utils/notificationHandler";
+import { AuthProvider } from "../contexts/AuthContext";
 
 const C = { bg: "#0C0D11", text: "#E7EAF0" };
 
-// Use environment variables from eas.json via Constants (fallback to hardcoded for Expo Go)
-const RC_IOS_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_RC_IOS_KEY ?? "appl_kbIDSqefYIxgekZLUxtdjMMJiEx";
-const RC_ANDROID_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_RC_ANDROID_KEY ?? "";
-const ENTITLEMENT_ID = Constants.expoConfig?.extra?.EXPO_PUBLIC_RC_ENTITLEMENT_ID ?? "pro_uploads";
+const RC_IOS_KEY = "appl_kbIDSqefYIxgekZLUxtdjMMJiEx";
+const RC_ANDROID_KEY = "goog_cDYCRHTaMuQZsDaHIlBOHiGqtZi";
+const ENTITLEMENT_ID = "OVRTK Plus";
 
-export default function RootLayout() {
-  const purchasesConfiguredRef = useRef(false);
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
-  useEffect(() => {
-    // Native platforms only
-    if (Platform.OS === "ios" || Platform.OS === "android") {
-      Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
+async function registerForPushNotifications(userId: string) {
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
 
-      const apiKey = Platform.OS === "ios" ? RC_IOS_KEY : (RC_ANDROID_KEY || RC_IOS_KEY);
-
-      const looksPlaceholder =
-        !apiKey || apiKey.startsWith("appl_xxx") || apiKey.startsWith("goog_xxx");
-
-      if (!purchasesConfiguredRef.current && !looksPlaceholder) {
-        try {
-          Purchases.configure({ apiKey });
-          purchasesConfiguredRef.current = true;
-          console.log("✅ RevenueCat configured successfully");
-        } catch (e) {
-          console.warn("RevenueCat configure error:", e);
-        }
-      } else if (looksPlaceholder) {
-        console.warn(
-          "RevenueCat: missing/placeholder SDK key. Set EXPO_PUBLIC_RC_IOS_KEY (and optional EXPO_PUBLIC_RC_ANDROID_KEY)."
-        );
-      }
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
     }
 
-    // Link RC <-> Firebase Auth
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
-      if (Platform.OS !== "ios" && Platform.OS !== "android") return;
-      if (!purchasesConfiguredRef.current) return;
-      
-      try {
-        if (user) {
-          await Purchases.logIn(user.uid);
-        } else {
-          await Purchases.logOut();
-        }
-      } catch (e) {
-        console.warn("RevenueCat login/link error:", e);
-      }
+    if (finalStatus !== 'granted') {
+      console.log('❌ Notification permissions not granted');
+      return;
+    }
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: 'b51c33c1-2276-4d1a-916f-aafe0c888374'
     });
+    const token = tokenData.data;
 
-    // Entitlement listener
-    const listener = (info: CustomerInfo) => {
-      const active = !!info.entitlements.active[ENTITLEMENT_ID];
-      console.log("RC: customer info updated, hasPro =", active);
-    };
+    console.log('✅ Push notification token:', token);
 
-    if (Platform.OS === "ios" || Platform.OS === "android") {
-      if (purchasesConfiguredRef.current) {
-        Purchases.addCustomerInfoUpdateListener(listener);
+    await setDoc(
+      doc(db, 'users', userId, 'fcmTokens', token),
+      {
+        token,
+        updatedAt: new Date(),
+        platform: Platform.OS,
       }
-      
-      // Prefetch offerings (non-blocking) - WITH DELAY
-      setTimeout(async () => {
-        if (!purchasesConfiguredRef.current) return;
+    );
+
+    console.log('✅ FCM token saved to Firestore');
+  } catch (error) {
+    console.error('❌ Error registering for push notifications:', error);
+  }
+}
+
+// 🔥 CONFIGURE IMMEDIATELY - ONLY ON NATIVE PLATFORMS
+let revenueCatReady = false;
+
+if (Platform.OS === "ios" || Platform.OS === "android") {
+  const apiKey = Platform.OS === "ios" ? RC_IOS_KEY : RC_ANDROID_KEY;
+  
+  try {
+    console.log("🔥 Configuring RevenueCat for", Platform.OS);
+    Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
+    Purchases.configure({ apiKey });
+    revenueCatReady = true;
+    console.log("✅ RevenueCat configured");
+  } catch (e) {
+    console.error("❌ RevenueCat configure error:", e);
+  }
+}
+
+export default function RootLayout() {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const initializeApp = async () => {
+      // 🔥 WAIT 1 SECOND FOR REVENUECAT TO FULLY INITIALIZE
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      if (!mounted) return;
+
+      const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+        handleNotificationResponse(response);
+      });
+
+      if (revenueCatReady) {
         try {
-          const offerings = await Purchases.getOfferings();
-          if (!offerings.current) {
-            console.warn(
-              "RC: No current offerings. Check products/offerings in RevenueCat and your sandbox user."
-            );
-          } else {
-            console.log("✅ RevenueCat offerings loaded successfully");
-          }
+          await Purchases.getOfferings();
+          console.log("✅ RevenueCat offerings loaded");
         } catch (e) {
           console.warn("RC: fetch offerings error:", e);
         }
-      }, 500); // 500ms delay to ensure Purchases is fully ready
-    }
+      }
 
-    return () => {
-      if (Platform.OS === "ios" || Platform.OS === "android") {
-        if (purchasesConfiguredRef.current) {
+      const unsubAuth = onAuthStateChanged(auth, async (user) => {
+        if (Platform.OS !== "ios" && Platform.OS !== "android") return;
+
+        try {
+          if (user) {
+            if (revenueCatReady) {
+              await Purchases.logIn(user.uid);
+            }
+            await registerForPushNotifications(user.uid);
+          } else {
+            if (revenueCatReady) {
+              await Purchases.logOut();
+            }
+          }
+        } catch (e) {
+          console.warn("Auth state change error:", e);
+        }
+      });
+
+      const listener = (info: CustomerInfo) => {
+        const active = !!info.entitlements.active[ENTITLEMENT_ID];
+        console.log("RC: customer info updated, hasPro =", active);
+      };
+
+      if (revenueCatReady) {
+        Purchases.addCustomerInfoUpdateListener(listener);
+      }
+
+      if (mounted) {
+        setIsReady(true);
+      }
+
+      return () => {
+        subscription.remove();
+        if (revenueCatReady) {
           Purchases.removeCustomerInfoUpdateListener(listener);
         }
-      }
-      unsubAuth();
+        unsubAuth();
+      };
+    };
+
+    initializeApp();
+
+    return () => {
+      mounted = false;
     };
   }, []);
 
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={C.text} />
+      </View>
+    );
+  }
+
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: C.bg }}>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: C.bg },
-          gestureEnabled: false,
-          fullScreenGestureEnabled: false,
-          animation: "fade",
-          presentation: "card",
-        }}
-      >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="auth/login"
-          options={{
-            headerShown: true,
-            title: "Log in",
-            headerStyle: { backgroundColor: C.bg },
-            headerTintColor: C.text,
+    <AuthProvider>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: C.bg }}>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: C.bg },
+            gestureEnabled: false,
+            fullScreenGestureEnabled: false,
+            animation: "fade",
+            presentation: "card",
           }}
-        />
-        <Stack.Screen
-          name="auth/signup"
-          options={{
-            headerShown: true,
-            title: "Create account",
-            headerStyle: { backgroundColor: C.bg },
-            headerTintColor: C.text,
-          }}
-        />
-        <Stack.Screen
-          name="chat"
-          options={{ headerShown: false, presentation: "card" }}
-        />
-      </Stack>
-    </GestureHandlerRootView>
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="auth/login"
+            options={{
+              headerShown: true,
+              title: "Log in",
+              headerStyle: { backgroundColor: C.bg },
+              headerTintColor: C.text,
+            }}
+          />
+          <Stack.Screen
+            name="auth/signup"
+            options={{
+              headerShown: true,
+              title: "Create account",
+              headerStyle: { backgroundColor: C.bg },
+              headerTintColor: C.text,
+            }}
+          />
+          <Stack.Screen
+            name="chat"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+        </Stack>
+      </GestureHandlerRootView>
+    </AuthProvider>
   );
 }

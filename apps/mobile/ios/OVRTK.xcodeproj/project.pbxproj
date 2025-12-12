@@ -7,27 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		12193F9190D9F985C50842D7 /* libPods-OVRTK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 7250D23A16F38EB790A7A67C /* libPods-OVRTK.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		5AE70743B9FB4DBE99EA090A /* libPods-OVRTK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1511CDFCFF5E5FE9772C90AA /* libPods-OVRTK.a */; };
-		5E9472C6C4E74247FF0D4D6C /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BB102AF90A4FE1047E59E71 /* ExpoModulesProvider.swift */; };
+		83963BB1FACDB9A9A660A61E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 2458D4208808C0C00CD7CFFA /* PrivacyInfo.xcprivacy */; };
+		A88B19BD4A57E6EB919E40F0 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5126E2CC7EC03D5E38AC70 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		C3C576D558237D54A1131FC1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 91E442F050912BE430AC062B /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0E72F94A2EA82EBDF6DA9006 /* Pods-OVRTK.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-OVRTK.debug.xcconfig"; path = "Target Support Files/Pods-OVRTK/Pods-OVRTK.debug.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* OVRTK.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OVRTK.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = OVRTK/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = OVRTK/Info.plist; sourceTree = "<group>"; };
-		1511CDFCFF5E5FE9772C90AA /* libPods-OVRTK.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-OVRTK.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		297BE5FFE6E416F93FAF7F36 /* Pods-OVRTK.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-OVRTK.debug.xcconfig"; path = "Target Support Files/Pods-OVRTK/Pods-OVRTK.debug.xcconfig"; sourceTree = "<group>"; };
-		91E442F050912BE430AC062B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = OVRTK/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		9BB102AF90A4FE1047E59E71 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-OVRTK/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		2458D4208808C0C00CD7CFFA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = OVRTK/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7250D23A16F38EB790A7A67C /* libPods-OVRTK.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-OVRTK.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		74C22380224971BFC271C069 /* Pods-OVRTK.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-OVRTK.release.xcconfig"; path = "Target Support Files/Pods-OVRTK/Pods-OVRTK.release.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = OVRTK/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		D05A734B3F4BD01E48ED4CB1 /* Pods-OVRTK.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-OVRTK.release.xcconfig"; path = "Target Support Files/Pods-OVRTK/Pods-OVRTK.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		EF5126E2CC7EC03D5E38AC70 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-OVRTK/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = OVRTK/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* OVRTK-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "OVRTK-Bridging-Header.h"; path = "OVRTK/OVRTK-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -37,7 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5AE70743B9FB4DBE99EA090A /* libPods-OVRTK.a in Frameworks */,
+				12193F9190D9F985C50842D7 /* libPods-OVRTK.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				91E442F050912BE430AC062B /* PrivacyInfo.xcprivacy */,
+				2458D4208808C0C00CD7CFFA /* PrivacyInfo.xcprivacy */,
 			);
 			name = OVRTK;
 			sourceTree = "<group>";
@@ -62,16 +62,24 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				1511CDFCFF5E5FE9772C90AA /* libPods-OVRTK.a */,
+				7250D23A16F38EB790A7A67C /* libPods-OVRTK.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		39F258FCE606EFC038958567 /* Pods */ = {
+		4FA3702E14017B81CD7829B0 /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				297BE5FFE6E416F93FAF7F36 /* Pods-OVRTK.debug.xcconfig */,
-				D05A734B3F4BD01E48ED4CB1 /* Pods-OVRTK.release.xcconfig */,
+				B7371BF47E83043BC521BCDC /* OVRTK */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
+		5BCCC6A6E418767F5A6A0A3B /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				0E72F94A2EA82EBDF6DA9006 /* Pods-OVRTK.debug.xcconfig */,
+				74C22380224971BFC271C069 /* Pods-OVRTK.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -90,8 +98,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				39F258FCE606EFC038958567 /* Pods */,
-				C4AF3BFE0C3B75D891DADD17 /* ExpoModulesProviders */,
+				5BCCC6A6E418767F5A6A0A3B /* Pods */,
+				4FA3702E14017B81CD7829B0 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -106,6 +114,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B7371BF47E83043BC521BCDC /* OVRTK */ = {
+			isa = PBXGroup;
+			children = (
+				EF5126E2CC7EC03D5E38AC70 /* ExpoModulesProvider.swift */,
+			);
+			name = OVRTK;
+			sourceTree = "<group>";
+		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -113,22 +129,6 @@
 			);
 			name = Supporting;
 			path = OVRTK/Supporting;
-			sourceTree = "<group>";
-		};
-		C4AF3BFE0C3B75D891DADD17 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				E4EB88C5BE63812AC96E4EE2 /* OVRTK */,
-			);
-			name = ExpoModulesProviders;
-			sourceTree = "<group>";
-		};
-		E4EB88C5BE63812AC96E4EE2 /* OVRTK */ = {
-			isa = PBXGroup;
-			children = (
-				9BB102AF90A4FE1047E59E71 /* ExpoModulesProvider.swift */,
-			);
-			name = OVRTK;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -139,13 +139,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "OVRTK" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				8161C2AFBA5AD8B075C2E76A /* [Expo] Configure project */,
+				BE7E713EFCAC88E39B9A1B91 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				9209DD2F4C56C11A101B19BE /* [CP] Embed Pods Frameworks */,
+				757874F6E217E831B7C9C423 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -197,7 +197,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				C3C576D558237D54A1131FC1 /* PrivacyInfo.xcprivacy in Resources */,
+				83963BB1FACDB9A9A660A61E /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -243,6 +243,24 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
+		757874F6E217E831B7C9C423 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-OVRTK/Pods-OVRTK-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-OVRTK/Pods-OVRTK-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -253,11 +271,15 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXApplication/ExpoApplication_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXNotifications/ExpoNotifications_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXUpdates/EXUpdates.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoDevice/ExpoDevice_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoSystemUI/ExpoSystemUI_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/PurchasesHybridCommon/PurchasesHybridCommon.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/ReachabilitySwift/ReachabilitySwift.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RevenueCat/RevenueCat.bundle",
@@ -270,11 +292,15 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoApplication_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoNotifications_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXUpdates.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoDevice_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoSystemUI_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/PurchasesHybridCommon.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ReachabilitySwift.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RevenueCat.bundle",
@@ -287,7 +313,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-OVRTK/Pods-OVRTK-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		8161C2AFBA5AD8B075C2E76A /* [Expo] Configure project */ = {
+		BE7E713EFCAC88E39B9A1B91 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -311,24 +337,6 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-OVRTK/expo-configure-project.sh\"\n";
 		};
-		9209DD2F4C56C11A101B19BE /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-OVRTK/Pods-OVRTK-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-OVRTK/Pods-OVRTK-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -337,7 +345,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				5E9472C6C4E74247FF0D4D6C /* ExpoModulesProvider.swift in Sources */,
+				A88B19BD4A57E6EB919E40F0 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -346,10 +354,9 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 297BE5FFE6E416F93FAF7F36 /* Pods-OVRTK.debug.xcconfig */;
+			baseConfigurationReference = 0E72F94A2EA82EBDF6DA9006 /* Pods-OVRTK.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = OVRTK/OVRTK.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -362,7 +369,7 @@
 					"FB_SONARKIT_ENABLED=1",
 				);
 				INFOPLIST_FILE = OVRTK/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -386,10 +393,9 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = D05A734B3F4BD01E48ED4CB1 /* Pods-OVRTK.release.xcconfig */;
+			baseConfigurationReference = 74C22380224971BFC271C069 /* Pods-OVRTK.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = OVRTK/OVRTK.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -397,7 +403,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = MP996M46PB;
 				INFOPLIST_FILE = OVRTK/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

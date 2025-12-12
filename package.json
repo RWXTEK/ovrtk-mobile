@@ -3,12 +3,23 @@
   "version": "1.0.0",
   "private": true,
   "packageManager": "pnpm@10.16.1",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "start": "pnpm -C apps/mobile start",
     "ios": "pnpm -C apps/mobile ios",
     "android": "pnpm -C apps/mobile android",
     "test": "echo \"Error: no test specified\" && exit 1"
-    
+  },
+  "dependencies": {
+    "expo": "~54.0.13",
+    "expo-camera": "~17.0.8",
+    "expo-file-system": "~19.0.17",
+    "expo-image-manipulator": "~14.0.7",
+    "expo-image-picker": "~17.0.8",
+    "openai": "^6.7.0",
+    "react": "19.1.0",
+    "react-native": "0.81.4"
   }
 }
